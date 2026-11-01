@@ -1,16 +1,23 @@
 // The globe drawn on the GPU (WebGL2), in one fragment shader over one triangle:
-//  - the surface: ocean (deeper away from the coasts), the land as NASA's Blue Marble shows it (a cloud-free picture:
+//  - the surface: the sea coloured by its floor (NASA's shaded relief and bathymetry: the shelves lighter, the deep dark,
+//    ridges and trenches in relief), with the sky's reflection at a glancing view and the sun's glint, broken into the
+//    waves' sparkle as the view closes in; the land as NASA's Blue Marble shows it (a cloud-free picture:
 //    the whole world's, and the part in view sharper once zoomed in — detail.ts; drawn colours, greener at the coasts
 //    and drier inland, until the picture is in), crisp coastlines (the picture's own once it is sharp), the sun's real day
-//    and night with a warm twilight band and a glint on the water, a faint 30° graticule;
+//    and night with a warm twilight band and a glint on the water, a faint coastline (brighter by night). Zoomed in,
+//    the land comes from a cache of NASA's tiles on the GPU (a texture array, one tile a layer, and a page table saying
+//    which layer holds which tile of which level): each pixel shows the finest tile held at the level its size on screen
+//    calls for, over the coarser ones held beneath, each fading in as it arrives — so the land sharpens tile by tile as
+//    the view moves and zooms, and never waits for a whole view;
 //  - the clouds: a translucent layer just above the surface (its parallax gives depth as the globe turns): where a
 //    satellite saw them (NOAA's infrared mosaic, satClouds.ts) between 72°S and 72°N, with the weather model's cloud (any
 //    height, its shapes drawn) faint where the satellite shows less — mostly low cloud, which infrared barely sees; the
 //    model's and the cities' own reports (cloudField.ts) beyond the image's edges or without an image. Zoomed in, the
 //    infrared of the satellite overhead (~2 km, the same hour) sharpens them where the world's satellite image shows
-//    cloud, and nowhere else: its fine structure cuts their edges and raises their tops. Lit by the sun (bright by
+//    cloud, and nowhere else: its fine structure cuts their edges and raises their tops; by day its visible band (~1 km)
+//    draws them as a camera saw them — their own shapes, texture and shading — where it has a picture. Lit by the sun (bright by
 //    day, sunset-coloured at the terminator, moonlit grey at night; the sharp tops shaded on their far side), darker
-//    where it rains, flickering with lightning in thunderstorms, casting soft shadows on the ground;
+//    where it rains, lit from within by soft flashes of lightning in thick storm cloud, casting soft shadows on the ground;
 //  - the atmosphere's glow, brighter on the sunlit limb.
 // The model's cloud shapes — swirling noise, more of it where the data says the sky is cloudier — are costly, so the
 // clouds are baked into a world map (4096 × 2048, or 2048 × 1024 where the GPU holds no larger texture) by a second shader
@@ -19,7 +26,7 @@
 // samples the map. A redraw costs the CPU nothing. Null where WebGL2 is unavailable — the SVG globe is drawn
 // instead.
 import { landMask } from "./landMask"
-import { TILE_PX } from "../geo/tiles"
+import { SURFACE_MAX_LEVEL, SURFACE_MIN_LEVEL, TILE_PX, tileCols, tileRes, tileRows } from "../geo/tiles"
 import { FIELD_H, FIELD_W, type CloudField } from "./cloudField"
 
 const RAD = Math.PI / 180
@@ -27,6 +34,17 @@ const RAD = Math.PI / 180
 export const CLOUD_MAP_W = 4096
 export const CLOUD_MAP_H = 2048
 const STRIPS = 32
+/** the land's page table: a block of rows a level, from the coarsest (its tiles across and down) to the finest */
+const PAGE_COLS0 = tileCols(SURFACE_MIN_LEVEL), PAGE_ROWS0 = tileRows(SURFACE_MIN_LEVEL)
+const PAGE_W = PAGE_COLS0 * 2 ** (SURFACE_MAX_LEVEL - SURFACE_MIN_LEVEL)
+const PAGE_H = PAGE_ROWS0 * (2 ** (SURFACE_MAX_LEVEL - SURFACE_MIN_LEVEL + 1) - 1)
+const pageRow = (z: number, row: number): number => PAGE_ROWS0 * (2 ** (z - SURFACE_MIN_LEVEL) - 1) + row
+/** the tiles the land's cache holds (a 512-px tile is 1 MiB): more on a GPU that holds large textures */
+const CACHE_TILES_LARGE = 96, CACHE_TILES = 48
+/** a level's pixels may be this much coarser than the screen's (as detail.ts plans) */
+const LEVEL_SLACK = 1.25
+/** a land tile fades in over this long */
+const TILE_FADE_MS = 350
 
 const VERT = `#version 300 es
 in vec2 a_pos;
@@ -72,7 +90,7 @@ const float PI = 3.14159265358979;
 const float SAT_FADE_DEG = 6.0;
 // the model's cloud (any height) where the satellite shows less — mostly low cloud, too warm to show in infrared —
 // drawn this faint
-const float LOW_FILL = 0.35;
+const float LOW_FILL = 0.2;
 ${NOISE}
 // the model's clouds here (how much, the share of it that is high): swirling noise, as much as the data's cover
 vec2 modelClouds(vec4 cd, float lon, float lat) {
@@ -124,6 +142,7 @@ void main() {
 
 const FRAG = `#version 300 es
 precision highp float;
+precision highp sampler2DArray;
 uniform vec2 u_center;   // globe centre, device px, origin bottom-left
 uniform float u_radius;  // device px
 uniform vec2 u_view;     // the point under the camera: lon, lat (radians)
@@ -135,11 +154,14 @@ uniform float u_time;    // seconds: the lightning
 uniform float u_lod;     // the cloud map's mip level at the disk's centre (texels per device pixel, log 2)
 uniform sampler2D u_photo;   // NASA's Blue Marble, the whole world
 uniform float u_photoOn;     // 0 = no picture yet: the drawn colours
-uniform sampler2D u_dSurf;   // the surface in view, sharper (detail.ts): rgb, a = its tile is in
-uniform vec4 u_dSurfBox;     // its box: west, south, east, north (radians; east may pass π)
-uniform vec2 u_dSurfPx;      // its size in texels
-uniform float u_dSurfOn;     // 0..1 as it fades in
-uniform sampler2D u_dCloud;  // the clouds' fine structure in view: r = colder than around it (0.5 = no different), g = trust
+uniform sampler2D u_bathy;   // NASA's shaded relief and bathymetry, the whole world: the sea's colour
+uniform float u_bathyOn;
+uniform sampler2DArray u_atlas;   // the land's tiles the cache holds, one a layer
+uniform highp sampler2D u_page;   // for each tile of each level: its layer + 1 (0 = not held), when it came in (s)
+uniform float u_atlasOn;
+uniform float u_nowS;             // seconds, on the page table's clock
+uniform sampler2D u_dCloud;  // the clouds in view: r = colder than around it (0.5 = no different), g = its trust,
+                             // b = cloud as the visible band shows it, a = its trust (by day, with a picture)
 uniform vec4 u_dCloudBox;
 uniform vec2 u_dCloudPx;
 uniform float u_dCloudOn;
@@ -195,6 +217,35 @@ float sharpWeight(vec3 b, vec2 texels) {
   float fp = max(length(dFdx(t)), length(dFdy(t)));
   return b.z > 0.0 ? smoothstep(0.0, 0.03, b.z) * (1.0 - smoothstep(1.5, 3.0, fp)) : 0.0;
 }
+// the land's sharp picture here, premultiplied (its colour × how much, how much): the finest tile the cache holds at the
+// level this pixel's size on screen calls for, over the coarser ones held beneath it (each faded in as it came)
+const float TILE_RES0 = ${tileRes(0)};
+const int ZMIN = ${SURFACE_MIN_LEVEL}, ZMAX = ${SURFACE_MAX_LEVEL};
+const int PAGE_COLS0 = ${PAGE_COLS0}, PAGE_ROWS0 = ${PAGE_ROWS0};
+const float LEVEL_SLACK = ${LEVEL_SLACK};
+const float TILE_FADE_S = ${TILE_FADE_MS / 1000};
+vec4 atlasAt(vec2 g, float degPerPx) {
+  float zf = log2(TILE_RES0 / (degPerPx * LEVEL_SLACK));
+  if (zf < float(ZMIN) - 1.0) return vec4(0.0);
+  vec4 acc = vec4(0.0);
+  int z = clamp(int(ceil(zf)), ZMIN, ZMAX);
+  for (int k = 0; k <= ZMAX - ZMIN; k++) {
+    if (z < ZMIN || acc.a > 0.995) break;
+    int n = 1 << (z - ZMIN);
+    float span = TILE_RES0 * 512.0 / exp2(float(z));
+    vec2 t = vec2((g.x + 180.0) / span, (90.0 - g.y) / span);
+    ivec2 cr = clamp(ivec2(floor(t)), ivec2(0), ivec2(PAGE_COLS0 * n - 1, PAGE_ROWS0 * n - 1));
+    vec2 pg = texelFetch(u_page, ivec2(cr.x, PAGE_ROWS0 * (n - 1) + cr.y), 0).rg;
+    if (pg.x > 0.5) {
+      vec2 uv = clamp(t - vec2(cr), 0.5 / 512.0, 1.0 - 0.5 / 512.0);
+      float f = clamp((u_nowS - pg.y) / TILE_FADE_S, 0.0, 1.0);
+      acc += vec4(textureLod(u_atlas, vec3(uv, pg.x - 1.0), 0.0).rgb * f, f) * (1.0 - acc.a);
+    }
+    z--;
+  }
+  // zoomed out past the coarsest level, the world picture takes over
+  return acc * smoothstep(float(ZMIN) - 1.0, float(ZMIN) - 0.4, zf);
+}
 
 void main() {
   vec2 p = (gl_FragCoord.xy - u_center) / u_radius;
@@ -211,7 +262,7 @@ void main() {
     float z = sqrt(max(0.0, 1.0 - d * d));
     vec3 n = vec3(p, z);
     vec2 ll = latLon(n);
-    float lat = ll.y, lon = ll.x;
+    float lat = ll.y;
     vec3 tex = sampleWrapped(u_land, uvOf(ll)).rgb;
     float land = tex.r, coast = tex.g, inland = tex.b;
     float alat = abs(lat) * 180.0 / PI;
@@ -220,18 +271,28 @@ void main() {
     float sharp = 0.0;
     if (u_photoOn > 0.5) {
       photo = sampleWrapped(u_photo, uvOf(ll)).rgb;
-      if (u_dSurfOn > 0.0) {
-        vec3 b = inBox(ll, u_dSurfBox);
-        sharp = sharpWeight(b, u_dSurfPx);
-        vec4 s = textureLod(u_dSurf, clamp(b.xy, 0.0, 1.0), 0.0);
-        sharp *= s.a * u_dSurfOn;
-        photo = mix(photo, s.rgb, sharp);
+      if (u_atlasOn > 0.5) {
+        // degrees (longitude in -180..180) and how many of them a pixel spans here
+        vec2 g = vec2(mod(ll.x * 180.0 / PI + 180.0, 360.0) - 180.0, ll.y * 180.0 / PI);
+        vec2 gx = dFdx(g), gy = dFdy(g);
+        gx.x -= 360.0 * floor(gx.x / 360.0 + 0.5);
+        gy.x -= 360.0 * floor(gy.x / 360.0 + 0.5);
+        vec4 a = atlasAt(g, max(max(length(gx), length(gy)), 1e-7));
+        photo = a.rgb + photo * (1.0 - a.a);
+        sharp = a.a;
       }
     }
 
     vec3 ocean = mix(vec3(0.028, 0.082, 0.190), vec3(0.050, 0.165, 0.320), 0.3 + 0.7 * z);
     // the shallows' glow follows the outline, too coarse to show where the sharp picture draws the coast
     ocean = mix(ocean, vec3(0.085, 0.320, 0.420), smoothstep(0.04, 0.7, coast) * 0.8 * (1.0 - sharp));
+    if (u_bathyOn > 0.5) {
+      // the sea as its floor colours it; where the picture's pixel is part land (at a coast) the drawn shallows stay
+      vec3 bed = sampleWrapped(u_bathy, uvOf(ll)).rgb;
+      float seaPx = smoothstep(0.0, 0.06, bed.b - max(bed.r, bed.g * 0.85));
+      // (the deep lifted a little toward blue, so it reads as sea rather than black)
+      ocean = mix(ocean, bed * vec3(0.95, 1.1, 1.22) + vec3(0.0, 0.006, 0.02), seaPx);
+    }
     ocean = mix(ocean, vec3(0.70, 0.80, 0.88), smoothstep(70.0, 80.0, alat) * 0.35);
     vec3 ground = mix(vec3(0.17, 0.40, 0.29), vec3(0.40, 0.46, 0.28), smoothstep(0.5, 0.95, inland));
     ground = mix(ground, vec3(0.58, 0.51, 0.34), smoothstep(0.82, 1.0, inland) * smoothstep(8.0, 20.0, alat) * (1.0 - smoothstep(36.0, 46.0, alat)));
@@ -258,8 +319,15 @@ void main() {
     vec3 night = base * vec3(0.26, 0.33, 0.54) + vec3(0.020, 0.034, 0.080);
     vec3 col = mix(night, lit, day);
     col += vec3(1.0, 0.48, 0.22) * 0.10 * exp(-pow(cosZ / 0.07, 2.0));
+    // the sea's sheen: the sky it reflects, more at a glancing view (toward the limb), and the sun's glint — a broad
+    // sheen and a hot core, broken by the waves' sparkle once the view is close enough to see them
+    float sea = 1.0 - landK;
+    float fres = 0.02 + 0.6 * pow(1.0 - z, 5.0);
+    col = mix(col, vec3(0.55, 0.70, 0.90), fres * sea * day * 0.6);
     vec3 r = reflect(-u_sun, n);
-    col += vec3(1.0, 0.93, 0.78) * pow(max(r.z, 0.0), 42.0) * (1.0 - landK) * day * 0.5;
+    float rz = max(r.z, 0.0);
+    float waves = u_radius > 1200.0 ? 0.35 + 1.3 * vnoise(worldDir(ll) * u_radius * 0.35) : 1.0;
+    col += vec3(1.0, 0.93, 0.80) * (0.18 * pow(rz, 30.0) + 0.6 * pow(rz, 400.0) * waves) * sea * day;
     // the clouds' shadow: the cloud the sunlight passes through on its way down (cast less far as the view closes in, where
     // the layer's height is drawn larger than it is)
     if (u_cloudOn > 0.5) {
@@ -267,16 +335,6 @@ void main() {
       col *= 1.0 - 0.38 * sh * day;
     }
 
-    vec2 g = vec2(lon, lat) * (180.0 / PI) / 30.0;
-    vec2 gx = dFdx(g), gy = dFdy(g);
-    gx.x -= 12.0 * floor(gx.x / 12.0 + 0.5);
-    gy.x -= 12.0 * floor(gy.x / 12.0 + 0.5);
-    vec2 fw = max(abs(gx) + abs(gy), vec2(1e-4));
-    vec2 gd = abs(fract(g - 0.5) - 0.5) / fw;
-    float meridian = (1.0 - min(gd.x, 1.0)) * (1.0 - smoothstep(70.0, 85.0, alat));
-    float parallel = 1.0 - min(gd.y, 1.0);
-    // the grid fades out as the view closes in, where it would only cross the picture
-    col = mix(col, vec3(0.62, 0.76, 1.0), max(meridian, parallel) * (0.06 + 0.06 * day) * (1.0 - smoothstep(1500.0, 4000.0, u_radius)));
     // a faint coastline, brighter by night so the land still reads in the dark (less so over the picture, which shows it)
     col = mix(col, vec3(0.55, 0.78, 0.95), coastLine * (0.16 + (u_photoOn > 0.5 ? 0.12 : 0.26) * (1.0 - day)));
 
@@ -290,26 +348,33 @@ void main() {
     vec2 ll = latLon(pc);
     // magnified, the map is read smoothly between its texels
     vec4 cm = u_lod < -0.5 ? cubic(u_cmap, uvOf(ll), u_cmapPx) : sampleWrapped(u_cmap, uvOf(ll));
-    // the satellite's fine structure in view: colder than around it = more cloud and a taller top, warmer = less. It acts
-    // only near the cloud the world's satellite image itself shows (not the model's faint fill), so the ground's own warm
-    // and cold patches never make cloud
-    float sharpC = 0.0, hf = 0.0;
-    if (u_dCloudOn > 0.0 && u_satCOn > 0.5) {
-      float v = (u_satCLat.x - ll.y * 180.0 / PI) / (u_satCLat.x - u_satCLat.y);
-      float near = v > 0.0 && v < 1.0 ? smoothstep(0.03, 0.3, textureLod(u_satC, vec2(uvOf(ll).x, v), 2.0).r) : 0.0;
+    // the clouds in view, sharper: by day, as the satellite's camera saw them (their own shapes and texture); else its
+    // infrared's fine structure — colder than around it = more cloud and a taller top, warmer = less — acting only near
+    // the cloud the world's satellite image itself shows (not the model's faint fill), so the ground's own warm and cold
+    // patches never make cloud
+    float sharpC = 0.0, hf = 0.0, visW = 0.0, vis = 0.0;
+    if (u_dCloudOn > 0.0) {
       vec3 bc = inBox(ll, u_dCloudBox);
-      sharpC = sharpWeight(bc, u_dCloudPx);
-      vec2 dc = cubic(u_dCloud, clamp(bc.xy, 0.0, 1.0), u_dCloudPx).rg;
-      sharpC *= dc.g * u_dCloudOn * near;
-      hf = (dc.r - 0.502) * HF_K;
+      float inC = sharpWeight(bc, u_dCloudPx) * u_dCloudOn;
+      if (inC > 0.0) {
+        vec4 dc = cubic(u_dCloud, clamp(bc.xy, 0.0, 1.0), u_dCloudPx);
+        visW = inC * dc.a;
+        vis = dc.b;
+        if (u_satCOn > 0.5) {
+          float v = (u_satCLat.x - ll.y * 180.0 / PI) / (u_satCLat.x - u_satCLat.y);
+          float near = v > 0.0 && v < 1.0 ? smoothstep(0.12, 0.4, textureLod(u_satC, vec2(uvOf(ll).x, v), 2.0).r) : 0.0;
+          sharpC = inC * dc.g * near * (1.0 - visW);
+          hf = (dc.r - 0.502) * HF_K;
+        }
+      }
     }
-    float relief = cm.r + sharpC * hf / HF_FULL_K;
+    float relief = mix(cm.r + sharpC * hf / HF_FULL_K, vis, visW);
     if (relief > 0.004) {
       vec3 w = worldDir(ll);
       // fine detail the map is too coarse to hold, zoomed in and only where the cloud is thin (its edges), where the
       // satellite's own is not drawn
-      float detail = smoothstep(600.0, 1600.0, u_radius) * (1.0 - min(1.0, sharpC * 4.0));
-      float dens = clamp(relief + (vnoise(w * 160.0) - 0.5) * 0.9 * detail * cm.r * (1.0 - cm.r), 0.0, 1.0);
+      float detail = smoothstep(600.0, 1600.0, u_radius) * (1.0 - min(1.0, sharpC * 4.0)) * (1.0 - visW);
+      float dens = clamp(relief + (vnoise(w * 160.0) - 0.5) * 0.45 * detail * cm.r * (1.0 - cm.r), 0.0, 1.0);
       float cz = dot(pc, u_sun);
       float dayC = smoothstep(-0.12, 0.15, cz);
       // sunlit tops white; grey where more cloud stands between this point and the sun (the far side of a cloud), and
@@ -327,6 +392,8 @@ void main() {
         }
       }
       float shade = clamp((self - cm.r) * 1.8 + 0.25 * (1.0 - dens) + fine, 0.0, 1.0);
+      // the camera's own light and shade: thin veils grey, thick sunlit tops white
+      shade = mix(shade, 0.4 * (1.0 - vis), visW);
       vec3 litC = mix(vec3(1.0), vec3(0.58, 0.62, 0.72), shade) * (0.80 + 0.20 * clamp(cz, 0.0, 1.0));
       litC = mix(litC, litC * vec3(0.52, 0.56, 0.64), cm.b);
       litC = mix(litC, vec3(0.93, 0.95, 1.0), cm.g * 0.5);
@@ -334,10 +401,22 @@ void main() {
       vec3 nightC = vec3(0.13, 0.15, 0.22) + vec3(0.05, 0.055, 0.07) * dens * (1.0 - 0.5 * self);
       vec3 cc = mix(nightC, litC, dayC);
       cc += vec3(1.0, 0.55, 0.35) * 0.18 * exp(-pow(cz / 0.07, 2.0));
-      float flash = cm.a * step(0.992, hash3(floor(w * 70.0) + vec3(floor(u_time * 6.0))));
-      cc += vec3(0.75, 0.82, 1.0) * flash * 1.6;
+      // lightning: now and then a soft round glow somewhere inside a cell of the sky — wholly within it, so no cell's
+      // edge ever shows — and only where a thunderstorm's cloud is thick
+      float flash = 0.0;
+      if (cm.a > 0.01 && dens > 0.45) {
+        vec3 q = w * 90.0, cell = floor(q);
+        float tick = mod(floor(u_time * 5.0), 997.0);
+        if (hash3(cell + vec3(tick * 1.7, tick * 0.3, tick * 2.9)) > 0.975) {
+          vec3 at = cell + 0.3 + 0.4 * vec3(hash3(cell + 3.1), hash3(cell + 7.7), hash3(cell + 11.3));
+          flash = cm.a * (1.0 - smoothstep(0.0, 0.28, length(q - at))) * smoothstep(0.45, 0.8, dens) * (1.0 - fract(u_time * 5.0));
+        }
+      }
+      cc += vec3(0.75, 0.82, 1.0) * flash * 1.4;
       // translucent: thin cloud lets the ground through, even the thickest a little
-      float a = pow(dens, 1.25) * mix(0.6, 0.84, dayC) * (1.0 - smoothstep(RC - 0.012, RC, d));
+      // (a cloud the camera saw is as opaque as it looked)
+      // (the faintest veils — mostly the infrared's noise — fade out rather than grey the sea)
+      float a = pow(dens, 1.25) * smoothstep(0.03, 0.2, dens) * mix(mix(0.6, 0.84, dayC), 0.94, visW * dayC) * (1.0 - smoothstep(RC - 0.012, RC, d));
       res = vec4(cc * a, a) + res * (1.0 - a);
     }
   }
@@ -398,6 +477,14 @@ export function sunInView(sun: { lat: number; lon: number }, view: { lon: number
 }
 
 type Uniform = WebGLUniformLocation | null
+/** anisotropic filtering, where the GPU offers it: the picture stays crisp where the globe curves away */
+const ANISOTROPY = 8
+
+/** Anisotropic filtering for the texture bound now, where the GPU offers it. */
+function anisotropic(gl: WebGL2RenderingContext): void {
+  const ext = gl.getExtension("EXT_texture_filter_anisotropic")
+  if (ext) gl.texParameterf(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(ANISOTROPY, gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number))
+}
 /** a canvas at half its size, for a GPU that holds no texture as large */
 function halved(c: HTMLCanvasElement): HTMLCanvasElement {
   const h = document.createElement("canvas")
@@ -408,6 +495,11 @@ function halved(c: HTMLCanvasElement): HTMLCanvasElement {
 }
 /** a sharp texture of the part in view: its tiles' key, its size, and its box (radians: west, south, east, north) */
 interface Sharp { key: string; tex: WebGLTexture; w: number; h: number; box: [number, number, number, number] }
+/** a land tile the cache holds: which, when the view last wanted it, and when it came in (performance.now) */
+interface Held { key: string; z: number; row: number; col: number; usedAt: number; at: number }
+/** the land's cache: the tiles (a texture array), the page table, and what each layer holds */
+interface Cache { tex: WebGLTexture; page: WebGLTexture; slots: Array<Held | null>; byKey: Map<string, number> }
+const tileKey = (z: number, row: number, col: number): string => `${z}/${row}/${col}`
 /** a sharp texture fades in over this long when it first shows */
 const FADE_MS = 600
 const boxRad = (b: { west: number; south: number; east: number; north: number }): [number, number, number, number] =>
@@ -433,6 +525,7 @@ function texture(gl: WebGL2RenderingContext, w: number, h: number, mips: boolean
   gl.bindTexture(gl.TEXTURE_2D, t)
   gl.texStorage2D(gl.TEXTURE_2D, mips ? Math.floor(Math.log2(Math.max(w, h))) + 1 : 1, gl.RGBA8, w, h)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mips ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR)
+  if (mips) anisotropic(gl)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
@@ -450,22 +543,27 @@ export class GlobeGl {
   private bakeTimeS = -Infinity
   private bakeDirty = true
   private baked = false
-  /** NASA's Blue Marble of the whole world */
+  /** NASA's Blue Marble of the whole world, and its shaded relief and bathymetry (the sea's colour) */
   private photoTex: WebGLTexture | null = null
-  /** the sharp surface on show, the next one being filled, and the clouds' fine structure on show */
-  private surf: Sharp | null = null
-  private surfNext: Sharp | null = null
+  private bathyTex: WebGLTexture | null = null
+  /** the land's cache (made when the first tile comes), the planning round that last said what the view wants, and the
+   *  page table's clock; and the clouds' detail */
+  private cache: Cache | null = null
+  private keepStamp = 0
+  private readonly bornAt = performance.now()
+  private readonly texel = new Float32Array(2)
   private cloud: Sharp | null = null
-  private surfFadeAt = -Infinity
   private cloudFadeAt = -Infinity
   private constructor(
     private readonly gl: WebGL2RenderingContext,
     private readonly prog: WebGLProgram,
     private readonly bake: WebGLProgram,
     private readonly loc: Record<"center" | "radius" | "view" | "sun" | "land" | "cmap" | "cmapPx" | "cloudOn" | "time" | "lod" | "photo" | "photoOn"
-      | "dSurf" | "dSurfBox" | "dSurfPx" | "dSurfOn" | "dCloud" | "dCloudBox" | "dCloudPx" | "dCloudOn" | "satC" | "satCLat" | "satCOn", Uniform>,
+      | "atlas" | "page" | "atlasOn" | "nowS" | "bathy" | "bathyOn" | "dCloud" | "dCloudBox" | "dCloudPx" | "dCloudOn" | "satC" | "satCLat" | "satCOn", Uniform>,
     private readonly bakeLoc: Record<"field" | "fieldValidity" | "sat" | "satOn" | "satLat" | "time" | "size", Uniform>,
     private readonly landTex: WebGLTexture,
+    /** a one-texel texture array, bound where the land's cache is not made yet */
+    private readonly noArray: WebGLTexture,
     private readonly fieldTex: WebGLTexture,
     private readonly fieldValidityTex: WebGLTexture,
     private readonly maps: [WebGLTexture, WebGLTexture],
@@ -488,7 +586,10 @@ export class GlobeGl {
     const vao = gl.createVertexArray(), buf = gl.createBuffer(), landTex = gl.createTexture(), fbo = gl.createFramebuffer()
     const fieldTex = texture(gl, FIELD_W, FIELD_H, false), fieldValidityTex = texture(gl, FIELD_W, FIELD_H, false)
     const mapA = texture(gl, mapW, mapH, true), mapB = texture(gl, mapW, mapH, true)
-    if (!vao || !buf || !landTex || !fbo || !fieldTex || !fieldValidityTex || !mapA || !mapB) return null
+    const noArray = gl.createTexture()
+    if (!vao || !buf || !landTex || !fbo || !fieldTex || !fieldValidityTex || !mapA || !mapB || !noArray) return null
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, noArray)
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, 1, 1, 1)
     gl.bindVertexArray(vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, buf)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW)
@@ -499,6 +600,7 @@ export class GlobeGl {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, big ? landMask() : halved(landMask()))
     gl.generateMipmap(gl.TEXTURE_2D)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    anisotropic(gl)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
@@ -506,11 +608,11 @@ export class GlobeGl {
     const u = at(prog), b = at(bake)
     return new GlobeGl(gl, prog, bake,
       { center: u("u_center"), radius: u("u_radius"), view: u("u_view"), sun: u("u_sun"), land: u("u_land"), cmap: u("u_cmap"), cmapPx: u("u_cmapPx"), cloudOn: u("u_cloudOn"), time: u("u_time"), lod: u("u_lod"),
-        photo: u("u_photo"), photoOn: u("u_photoOn"), dSurf: u("u_dSurf"), dSurfBox: u("u_dSurfBox"), dSurfPx: u("u_dSurfPx"), dSurfOn: u("u_dSurfOn"),
+        photo: u("u_photo"), photoOn: u("u_photoOn"), atlas: u("u_atlas"), page: u("u_page"), atlasOn: u("u_atlasOn"), nowS: u("u_nowS"), bathy: u("u_bathy"), bathyOn: u("u_bathyOn"),
         dCloud: u("u_dCloud"), dCloudBox: u("u_dCloudBox"), dCloudPx: u("u_dCloudPx"), dCloudOn: u("u_dCloudOn"),
         satC: u("u_satC"), satCLat: u("u_satCLat"), satCOn: u("u_satCOn") },
       { field: b("u_field"), fieldValidity: b("u_fieldValidity"), sat: b("u_sat"), satOn: b("u_satOn"), satLat: b("u_satLat"), time: b("u_time"), size: b("u_size") },
-      landTex, fieldTex, fieldValidityTex, [mapA, mapB], fbo, vao, buf, mapW, mapH)
+      landTex, noArray, fieldTex, fieldValidityTex, [mapA, mapB], fbo, vao, buf, mapW, mapH)
   }
 
   /** The cloud field and evidence weights (cloudField.ts); null = no clouds known. A new bake starts on the next draw. */
@@ -555,9 +657,19 @@ export class GlobeGl {
   /** NASA's Blue Marble of the whole world (equirectangular, north up), for the land's colours; halved for a GPU that
    *  holds no texture as large. */
   setPhoto(img: ImageBitmap): void {
+    if (!this.photoTex) this.photoTex = this.gl.createTexture()
+    if (this.photoTex) this.worldPicture(this.photoTex, img)
+  }
+
+  /** NASA's shaded relief and bathymetry of the whole world (equirectangular, north up), for the sea's colour. */
+  setBathymetry(img: ImageBitmap): void {
+    if (!this.bathyTex) this.bathyTex = this.gl.createTexture()
+    if (this.bathyTex) this.worldPicture(this.bathyTex, img)
+  }
+
+  /** A picture of the whole world into a texture with its mip levels, halved for a GPU that holds no texture as large. */
+  private worldPicture(tex: WebGLTexture, img: ImageBitmap): void {
     const gl = this.gl
-    if (!this.photoTex) this.photoTex = gl.createTexture()
-    if (!this.photoTex) return
     const max = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
     let src: TexImageSource = img
     if (img.width > max) {
@@ -567,46 +679,103 @@ export class GlobeGl {
       c.getContext("2d")?.drawImage(img, 0, 0, c.width, c.height)
       src = c
     }
-    gl.bindTexture(gl.TEXTURE_2D, this.photoTex)
+    gl.bindTexture(gl.TEXTURE_2D, tex)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src)
     gl.generateMipmap(gl.TEXTURE_2D)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    anisotropic(gl)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
   }
 
-  /** A new sharp surface to fill (w × h texels over a box of the world, degrees), shown by showSurface; the one on
-   *  show stays until then. Nothing changes when this one is already on show or being filled. */
-  beginSurface(key: string, box: { west: number; south: number; east: number; north: number }, w: number, h: number): void {
-    if (this.surf?.key === key || this.surfNext?.key === key) return
+  /** how many land tiles the cache holds on this GPU */
+  get surfaceLayers(): number {
     const gl = this.gl
-    if (this.surfNext) gl.deleteTexture(this.surfNext.tex)
-    this.surfNext = null
-    const tex = sharpTexture(gl, w, h, gl.RGBA8)
-    if (tex) this.surfNext = { key, tex, w, h, box: boxRad(box) }
+    const big = (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number) >= 8192
+    return Math.min(gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) as number, big ? CACHE_TILES_LARGE : CACHE_TILES)
   }
 
-  /** One tile of a sharp surface (the one being filled, or the one on show when it still comes in). */
-  putSurfaceTile(key: string, x: number, y: number, img: TexImageSource): void {
-    const t = this.surfNext?.key === key ? this.surfNext : this.surf?.key === key ? this.surf : null
-    if (!t) return
+  /** Whether the cache holds a land tile. */
+  hasSurfaceTile(z: number, row: number, col: number): boolean {
+    return this.cache?.byKey.has(tileKey(z, row, col)) === true
+  }
+
+  /** What the view wants now: those of the tiles the cache holds stay; the others go first when room is needed. */
+  keepSurfaceTiles(tiles: ReadonlyArray<{ z: number; row: number; col: number }>): void {
+    const stamp = ++this.keepStamp, c = this.cache
+    if (!c) return
+    for (const t of tiles) {
+      const layer = c.byKey.get(tileKey(t.z, t.row, t.col))
+      const h = layer != null ? c.slots[layer] : null
+      if (h) h.usedAt = stamp
+    }
+  }
+
+  /** A land tile into the cache (it fades in), in a free layer or in place of the one the view wanted longest ago — never
+   *  one it wants now (a tile it does not want, come in late, is the first to go again). False when there is no such
+   *  room, or the picture is not a tile. */
+  putSurfaceTile(z: number, row: number, col: number, img: ImageBitmap, wanted = true): boolean {
+    const gl = this.gl, key = tileKey(z, row, col)
+    if (img.width !== TILE_PX || img.height !== TILE_PX) return false
+    const c = this.cache ?? this.makeCache()
+    if (!c) return false
+    if (c.byKey.has(key)) return true
+    let layer = c.slots.indexOf(null)
+    if (layer < 0) {
+      let oldest = this.keepStamp
+      c.slots.forEach((h, k) => { if (h && h.usedAt < oldest) { oldest = h.usedAt; layer = k } })
+      if (layer < 0) return false
+      const gone = c.slots[layer]!
+      c.byKey.delete(gone.key)
+      this.pageTexel(c, gone.z, gone.row, gone.col, 0, 0)
+    }
+    gl.activeTexture(gl.TEXTURE11)
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, c.tex)
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, TILE_PX, TILE_PX, 1, gl.RGBA, gl.UNSIGNED_BYTE, img)
+    const now = performance.now()
+    c.slots[layer] = { key, z, row, col, usedAt: wanted ? this.keepStamp : this.keepStamp - 1, at: now }
+    c.byKey.set(key, layer)
+    this.pageTexel(c, z, row, col, layer + 1, (now - this.bornAt) / 1000)
+    return true
+  }
+
+  /** The cache, made on the first tile: a texture array of 512-px tiles and its page table (all empty). */
+  private makeCache(): Cache | null {
+    const gl = this.gl, layers = this.surfaceLayers
+    const tex = gl.createTexture(), page = gl.createTexture()
+    if (!tex || !page) return null
+    gl.activeTexture(gl.TEXTURE11)
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex)
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, TILE_PX, TILE_PX, layers)
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.activeTexture(gl.TEXTURE10)
+    gl.bindTexture(gl.TEXTURE_2D, page)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, PAGE_W, PAGE_H, 0, gl.RG, gl.FLOAT, new Float32Array(PAGE_W * PAGE_H * 2))
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    this.cache = { tex, page, slots: new Array<Held | null>(layers).fill(null), byKey: new Map() }
+    return this.cache
+  }
+
+  /** One entry of the page table: a tile's layer + 1 (0 = not held) and when it came in (s). */
+  private pageTexel(c: Cache, z: number, row: number, col: number, layerPlus1: number, atS: number): void {
     const gl = this.gl
-    gl.bindTexture(gl.TEXTURE_2D, t.tex)
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, img)
+    this.texel[0] = layerPlus1
+    this.texel[1] = atS
+    gl.activeTexture(gl.TEXTURE10)
+    gl.bindTexture(gl.TEXTURE_2D, c.page)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, col, pageRow(z, row), 1, 1, gl.RG, gl.FLOAT, this.texel)
   }
 
-  /** The sharp surface being filled takes over (fading in when none was on show). */
-  showSurface(key: string): void {
-    if (this.surfNext?.key !== key) return
-    if (this.surf) this.gl.deleteTexture(this.surf.tex)
-    else this.surfFadeAt = performance.now()
-    this.surf = this.surfNext
-    this.surfNext = null
-  }
-
-  /** The clouds' fine structure in view (two bytes a texel: irDecode.ts cloudDetail), or none. */
-  setCloudDetail(d: { key: string; box: { west: number; south: number; east: number; north: number }; w: number; h: number; rg: Uint8Array } | null): void {
+  /** The clouds in view (four bytes a texel: the infrared's fine structure and trust, the visible cloud and its trust —
+   *  detailWorker.ts), or none. */
+  setCloudDetail(d: { key: string; box: { west: number; south: number; east: number; north: number }; w: number; h: number; px: Uint8Array } | null): void {
     const gl = this.gl
     if (!d) {
       if (this.cloud) gl.deleteTexture(this.cloud.tex)
@@ -618,30 +787,25 @@ export class GlobeGl {
       if (this.cloud) gl.deleteTexture(this.cloud.tex)
       else this.cloudFadeAt = performance.now()
       this.cloud = null
-      tex = sharpTexture(gl, d.w, d.h, gl.RG8)
+      tex = sharpTexture(gl, d.w, d.h, gl.RGBA8)
       if (!tex) return
     }
     gl.bindTexture(gl.TEXTURE_2D, tex)
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, d.w, d.h, gl.RG, gl.UNSIGNED_BYTE, d.rg)
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, d.w, d.h, gl.RGBA, gl.UNSIGNED_BYTE, d.px)
     this.cloud = { key: d.key, tex, w: d.w, h: d.h, box: boxRad(d.box) }
   }
 
-  /** No sharp surface any more (the view is wide enough for the world's picture): its textures are freed. */
-  clearSurface(): void {
-    const gl = this.gl
-    for (const t of [this.surf?.tex, this.surfNext?.tex]) if (t) gl.deleteTexture(t)
-    this.surf = this.surfNext = null
+  /** the most tiles a side the clouds' detail may span on this GPU: 8 where it holds large textures (a desktop), 6 else */
+  get maxSharpTiles(): number {
+    const max = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) as number
+    return Math.min(Math.floor(max / TILE_PX), max >= 8192 ? 8 : 6)
   }
 
-  /** the most tiles a side a sharp texture may span on this GPU */
-  get maxSharpTiles(): number { return Math.floor((this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) as number) / TILE_PX) }
-
-  /** a sharp texture is fading in: the globe should draw again soon */
+  /** a land tile or the clouds' detail is fading in: the globe should draw again soon */
   get fading(): boolean {
     const now = performance.now()
-    return (this.surf != null && now - this.surfFadeAt < FADE_MS) || (this.cloud != null && now - this.cloudFadeAt < FADE_MS)
+    if (this.cloud != null && now - this.cloudFadeAt < FADE_MS) return true
+    return this.cache != null && this.cache.slots.some((h) => h != null && now - h.at < TILE_FADE_MS)
   }
 
   draw(o: GlobeDraw): void {
@@ -673,12 +837,20 @@ export class GlobeGl {
     gl.activeTexture(gl.TEXTURE4)
     gl.bindTexture(gl.TEXTURE_2D, this.photoTex ?? this.landTex)
     gl.uniform1i(this.loc.photo, 4)
-    const surf = this.photoTex ? this.surf : null
-    gl.uniform1f(this.loc.dSurfOn, surf ? fade(this.surfFadeAt) : 0)
-    gl.activeTexture(gl.TEXTURE5)
-    gl.bindTexture(gl.TEXTURE_2D, surf?.tex ?? this.landTex)
-    gl.uniform1i(this.loc.dSurf, 5)
-    if (surf) { gl.uniform4f(this.loc.dSurfBox, ...surf.box); gl.uniform2f(this.loc.dSurfPx, surf.w, surf.h) }
+    gl.uniform1f(this.loc.bathyOn, this.bathyTex ? 1 : 0)
+    gl.activeTexture(gl.TEXTURE12)
+    gl.bindTexture(gl.TEXTURE_2D, this.bathyTex ?? this.landTex)
+    gl.uniform1i(this.loc.bathy, 12)
+    // the land's cache, on units of its own
+    const cache = this.photoTex ? this.cache : null
+    gl.uniform1f(this.loc.atlasOn, cache && cache.byKey.size > 0 ? 1 : 0)
+    gl.uniform1f(this.loc.nowS, (now - this.bornAt) / 1000)
+    gl.activeTexture(gl.TEXTURE10)
+    gl.bindTexture(gl.TEXTURE_2D, cache?.page ?? this.landTex)
+    gl.uniform1i(this.loc.page, 10)
+    gl.activeTexture(gl.TEXTURE11)
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, cache?.tex ?? this.noArray)
+    gl.uniform1i(this.loc.atlas, 11)
     const cloud = cloudsOn ? this.cloud : null
     gl.uniform1f(this.loc.dCloudOn, cloud ? fade(this.cloudFadeAt) : 0)
     gl.activeTexture(gl.TEXTURE6)
@@ -744,7 +916,7 @@ export class GlobeGl {
     gl.deleteTexture(this.fieldTex)
     gl.deleteTexture(this.fieldValidityTex)
     if (this.satTex) gl.deleteTexture(this.satTex)
-    for (const t of [this.photoTex, this.surf?.tex, this.surfNext?.tex, this.cloud?.tex]) if (t) gl.deleteTexture(t)
+    for (const t of [this.photoTex, this.bathyTex, this.cache?.tex, this.cache?.page, this.noArray, this.cloud?.tex]) if (t) gl.deleteTexture(t)
     for (const m of this.maps) gl.deleteTexture(m)
     gl.deleteFramebuffer(this.fbo)
     gl.deleteBuffer(this.buf)

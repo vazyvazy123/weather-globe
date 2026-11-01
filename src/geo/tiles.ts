@@ -30,11 +30,13 @@ export interface CloudSourceInfo {
   subLon: number
   /** its finest level (its own resolution) */
   maxLevel: number
+  /** the NASA GIBS layer of its red visible band (~1 km): the clouds as a camera sees them, by day */
+  visLayer: string
 }
 export const CLOUD_SOURCES: Readonly<Record<CloudSource, CloudSourceInfo>> = {
-  "goes-west": { name: "GOES-West", by: "NOAA", layer: "GOES-West_ABI_Band13_Clean_Infrared", subLon: -137.2, maxLevel: 5 },
-  "goes-east": { name: "GOES-East", by: "NOAA", layer: "GOES-East_ABI_Band13_Clean_Infrared", subLon: -75.2, maxLevel: 5 },
-  himawari: { name: "Himawari", by: "JMA", layer: "Himawari_AHI_Band13_Clean_Infrared", subLon: 140.7, maxLevel: 5 },
+  "goes-west": { name: "GOES-West", by: "NOAA", layer: "GOES-West_ABI_Band13_Clean_Infrared", subLon: -137.2, maxLevel: 5, visLayer: "GOES-West_ABI_Band2_Red_Visible_1km" },
+  "goes-east": { name: "GOES-East", by: "NOAA", layer: "GOES-East_ABI_Band13_Clean_Infrared", subLon: -75.2, maxLevel: 5, visLayer: "GOES-East_ABI_Band2_Red_Visible_1km" },
+  himawari: { name: "Himawari", by: "JMA", layer: "Himawari_AHI_Band13_Clean_Infrared", subLon: 140.7, maxLevel: 5, visLayer: "Himawari_AHI_Band3_Red_Visible_1km" },
 }
 /** the cloud tiles' times: on the 10-minute mark, at most a day old */
 export const CLOUD_STEP_MS = 10 * 60_000
@@ -42,11 +44,11 @@ export const CLOUD_MAX_AGE_MS = 24 * 3600_000
 
 export type TileReq =
   | { kind: "surface"; z: number; row: number; col: number }
-  | { kind: "clouds"; source: CloudSource; timeMs: number; z: number; row: number; col: number }
+  | { kind: "clouds"; source: CloudSource; timeMs: number; z: number; row: number; col: number; band?: "vis" }
 /** a tile's picture (JPEG for the surface; PNG for the clouds, with the time of the picture it is — up to 10 min from the
- *  time asked), or why there is none: the service has no such picture ("missing"), or it could not be read now
- *  ("failed": worth asking again later) */
-export type TileAnswer = { bytes: Uint8Array; timeMs?: number } | { none: "missing" | "failed" }
+ *  time asked), or why there is none: the service has no such picture ("missing"), it could not be read now ("failed":
+ *  worth asking again later), or this minute's requests are spent ("busy": worth asking again in a moment) */
+export type TileAnswer = { bytes: Uint8Array; timeMs?: number } | { none: "missing" | "failed" | "busy" }
 
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v)
 
@@ -63,5 +65,6 @@ export function checkTileReq(v: unknown, nowMs: number): TileReq | null {
   const source = o.source as CloudSource, t = o.timeMs
   if (z < CLOUD_MIN_LEVEL || z > CLOUD_SOURCES[source].maxLevel || !onGrid) return null
   if (!isInt(t) || t % CLOUD_STEP_MS !== 0 || t > nowMs + 60_000 || t < nowMs - CLOUD_MAX_AGE_MS) return null
-  return { kind: "clouds", source, timeMs: t, z, row, col }
+  if (o.band != null && o.band !== "vis") return null
+  return o.band === "vis" ? { kind: "clouds", source, timeMs: t, z, row, col, band: "vis" } : { kind: "clouds", source, timeMs: t, z, row, col }
 }

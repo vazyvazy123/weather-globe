@@ -14,6 +14,12 @@ export class Lane {
   private readonly starts: number[] = []
   constructor(private readonly max: number, private readonly perMinute: number, private readonly now: () => number = Date.now) {}
 
+  /** the share of this minute's requests already started (0..1) */
+  usage(): number {
+    const t = this.now()
+    return this.starts.filter((s) => t - s <= 60_000).length / this.perMinute
+  }
+
   async run<T>(fn: () => Promise<T>): Promise<T | "refused"> {
     const t = this.now()
     while (this.starts.length && t - this.starts[0] > 60_000) this.starts.shift()

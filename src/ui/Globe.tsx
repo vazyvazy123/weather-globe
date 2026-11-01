@@ -322,6 +322,12 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
       const img = await createImageBitmap(new Blob([bytes as BlobPart], { type: "image/jpeg" }))
       if (live) { gl.setPhoto(img); loader.photoShown(); layoutRef.current() }
       img.close()
+      // then the sea floor's relief, for the sea's colour (the drawn sea stays where it cannot be had)
+      const bed = await tiles.bathymetry()
+      if (!live || !bed) return
+      const bedImg = await createImageBitmap(new Blob([bed as BlobPart], { type: "image/jpeg" }))
+      if (live) { gl.setBathymetry(bedImg); layoutRef.current() }
+      bedImg.close()
     }).catch((err: unknown) => { if (live) loader.photoFailed(`NASA base image could not be decoded (${err instanceof Error ? err.message : "decode failed"})`) })
     return () => { live = false; loader.dispose(); detailRef.current = null }
   }, [gl, tiles])

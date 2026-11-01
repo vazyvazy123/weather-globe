@@ -54,6 +54,9 @@ const I = {
   fold: "M6.4 8.6L12 14.2l5.6-5.6L19 10l-7 7-7-7z",
   unfold: "M6.4 15.4L12 9.8l5.6 5.6L19 14l-7-7-7 7z",
   close: "M6.4 5L12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4L12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z",
+  volHigh: "M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z",
+  volLow: "M5 9v6h4l5 5V4L9 9H5zm11.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12z",
+  mute: "M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12a9 9 0 0 0-7-8.77v2.06A7 7 0 0 1 19 12zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a9 9 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z",
   globe: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm6.9 8h-3a14 14 0 0 0-1.3-5.4A7 7 0 0 1 18.9 11zM12 5.1c.9 1.2 1.7 3.2 1.9 5.9h-3.8c.2-2.7 1-4.7 1.9-5.9zM9.4 5.6A14 14 0 0 0 8.1 11h-3a7 7 0 0 1 4.3-5.4zM5.1 13h3a14 14 0 0 0 1.3 5.4A7 7 0 0 1 5.1 13zm6.9 5.9c-.9-1.2-1.7-3.2-1.9-5.9h3.8c-.2 2.7-1 4.7-1.9 5.9zm2.6-.5a14 14 0 0 0 1.3-5.4h3a7 7 0 0 1-4.3 5.4z",
 }
 const Icon = ({ d }: { d: string }) => <svg viewBox="0 0 24 24" aria-hidden="true" className="ic"><path d={d} /></svg>
@@ -77,6 +80,24 @@ function Pic({ src, className, alt = "" }: { src: string | null; className: stri
   useEffect(() => setFailed(false), [src])
   if (!src || failed) return <span className={`${className} pic-none`} aria-hidden="true" />
   return <img className={className} src={src} alt={alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+}
+
+/** One volume for every song: a mute button and, where the browser allows it, a slider. */
+function Volume({ music }: { music: Music }) {
+  const silent = music.muted || music.volume === 0
+  const shown = music.muted ? 0 : music.volume
+  const label = silent ? "Unmute" : "Mute"
+  return (
+    <div className="dock-volume">
+      <button type="button" className="dock-icon small" onClick={music.toggleMute} aria-pressed={silent} aria-label={label} title={label}>
+        <Icon d={silent ? I.mute : music.volume < 0.5 ? I.volLow : I.volHigh} />
+      </button>
+      {music.volumeAdjustable && (
+        <input type="range" className="dock-range" min={0} max={1} step={0.01} value={shown} aria-label="Volume" aria-valuetext={`${Math.round(shown * 100)}%`}
+          style={{ ["--p" as string]: `${shown * 100}%` }} onChange={(e) => music.setVolume(Number(e.currentTarget.value))} />
+      )}
+    </div>
+  )
 }
 
 const Eq = ({ on }: { on: boolean }) => <span className={`eq${on ? " on" : ""}`} aria-hidden="true"><i /><i /><i /><i /></span>
@@ -169,7 +190,7 @@ export function MusicDock({ music, place, onClose, onFind, boxRef }: Props) {
       {track && (
         <div className="dock-time">
           <span>{clock(t)}</span>
-          <input type="range" min={0} max={d} step={0.1} value={Math.min(t, d)} aria-label="Seek"
+          <input type="range" className="dock-range" min={0} max={d} step={0.1} value={Math.min(t, d)} aria-label="Seek"
             style={{ ["--p" as string]: `${(Math.min(t, d) / d) * 100}%` }}
             onChange={(e) => { if (audio) audio.currentTime = Number(e.currentTarget.value) }} />
           <span>{clock(d)}</span>
@@ -186,6 +207,8 @@ export function MusicDock({ music, place, onClose, onFind, boxRef }: Props) {
           <a className="dock-icon" href={youtubeSearchUrl(track)} target="_blank" rel="noopener noreferrer" aria-label={`The full song on YouTube`} title="The full song on YouTube"><Icon d={I.out} /></a>
         ) : <span className="dock-icon" aria-hidden="true" />}
       </div>
+
+      <Volume music={music} />
 
       {note && <p className={`dock-note${status === "blocked" ? "" : " warn"}`} aria-hidden="true">{note}</p>}
       {track && (

@@ -1,14 +1,19 @@
-// The globe's sharp detail of the part in view, once the view has stood still a moment (data/tileFetcher.ts fetches and
-// caches the tiles; globeGl.ts draws them):
-//  - the surface: NASA's Blue Marble tiles at the level that matches the screen there, laid into one texture covering
-//    the view (the one on show stays until the next is in);
-//  - the clouds: the infrared of the satellite with the best view of the middle of the picture (GOES-West, GOES-East or
-//    Himawari), at the hour of the world's cloud image, turned into the clouds' fine structure off the
-//    main thread (detailWorker.ts → irDecode.ts) and rebuilt as its tiles come in. It sharpens the cloud the world
-//    image shows, near that cloud only, at the same hour; what is on show of another satellite or hour goes at once.
-// Nothing is asked while the view is wide enough for the world's own pictures, and the detail is let go then. A tile that
-// could not be had is asked again a minute later; the status says what is drawn, not what was asked.
+// The globe's sharp detail of the part in view (data/tileFetcher.ts fetches and caches the tiles; globeGl.ts draws them):
+//  - the land: NASA's Blue Marble tiles, kept in a cache on the GPU that the globe draws from at whatever level each
+//    pixel needs (globeGl.ts). The view's tiles are planned while it moves (at most every MOVING_PLAN_MS): first the
+//    coarser levels under it (a few tiles, so something sharp shows at once), then the view's own level from the middle
+//    out; once those are in and the network is idle, the next level's tiles for the middle of the view are fetched
+//    ahead, so zooming in finds them at hand. Nothing the cache holds is fetched again;
+//  - the clouds, once the view stands still: the infrared of the satellite with the best view of the middle of the
+//    picture (GOES-West, GOES-East or Himawari) at the hour of the world's cloud image, and by day its visible band of
+//    the same hour, turned off the main thread (detailWorker.ts) into the clouds' fine structure and their look as a
+//    camera sees them, rebuilt as the tiles come in. What is on show of another hour goes at once, of another satellite
+//    (the same clouds) stays until the new one is built, and a part-built one waits a moment rather than leave holes in
+//    the one on show.
+// Nothing is asked while the view is wide enough for the world's own pictures. A tile that could not be had is asked
+// again a minute later; the status says what is drawn, not what was asked.
 import { CLOUD_MIN_LEVEL, CLOUD_SOURCES, SURFACE_MAX_LEVEL, SURFACE_MIN_LEVEL, TILE_PX, tileCols, tileRes, tileRows, tileSpan, type CloudSource, type TileAnswer, type TileReq } from "../geo/tiles"
+import { subsolarPoint, sunCosAt } from "../geo/sun"
 import type { GlobeCamera } from "./camera"
 import type { GlobeGl } from "./globeGl"
 
@@ -17,16 +22,32 @@ const RAD = Math.PI / 180
 export const WORLD_DEG_PER_PX = 360 / 4096
 /** a level's pixels may be this much coarser than the screen's */
 const LEVEL_SLACK = 1.25
-/** the land's sharp picture spans at most this many tiles a side (3072 px), fewer where the GPU holds less */
-export const MAX_SIDE = 6
-/** the view has stood still this long */
-const STILL_MS = 250
+/** a plan spans at most this many tiles a side by default (the clouds' fewer, the land's as many as the GPU cache allows) */
+export const MAX_SIDE = 8
+/** the view has stood still this long: the clouds' detail is planned */
+const STILL_MS = 150
+/** while the view moves, its land is planned at most this often */
+const MOVING_PLAN_MS = 90
+/** the view's land tiles (its own level and the coarser ones under it) fill at most this share of the GPU cache, else a
+ *  level coarser: room is left for the next level ahead */
+const VIEW_SHARE = 0.8
+/** the next level is fetched ahead for this share of the view's middle (what zooming in twice as close shows): at most
+ *  AHEAD_MAX tiles at a time and AHEAD_PER_MIN a minute, and only while nothing else is asked */
+const AHEAD_SHARE = 0.5
+const AHEAD_MAX = 12
+const AHEAD_PER_MIN = 48
 /** a satellite is used out to this angle from the point below it */
 export const MAX_VIEW_DEG = 72
-/** the surface on show waits at most this long for the rest of the next one */
-const SHOW_WITHIN_MS = 1500
 /** the clouds' detail is rebuilt at most this often while its tiles come in */
-const REBUILD_MS = 700
+const REBUILD_MS = 350
+/** while an earlier detail of the clouds is on show, a part-built one waits at most this long for the rest */
+const CLOUD_SHOW_WITHIN_MS = 900
+/** the next level is not fetched ahead while this share of the minute's requests is spent */
+const AHEAD_MAX_USAGE = 0.6
+/** a tile refused because the minute's requests were spent is asked again after this */
+const BUSY_RETRY_MS = 5000
+/** the visible band is asked for where the sun stood at least this high over the middle of the view at the hour */
+const VIS_SUN_COS = 0.08
 /** tile pictures held in memory (the browser's cache keeps the surface tiles longer) */
 const HELD_BYTES = 48e6
 
@@ -116,6 +137,12 @@ export function bestSource(lat: number, lon: number): CloudSource | null {
  *  pixels in all */
 export const blurRadius = (z: number): number => Math.max(1, Math.round((1.5 * WORLD_DEG_PER_PX / tileRes(z) - 1) / 2))
 
+/** the middle `share` of a box */
+const middleOf = (b: Box, share: number): Box => {
+  const lon = (b.west + b.east) / 2, lat = (b.south + b.north) / 2, dLon = ((b.east - b.west) * share) / 2, dLat = ((b.north - b.south) * share) / 2
+  return { west: lon - dLon, east: lon + dLon, south: Math.max(-90, lat - dLat), north: Math.min(90, lat + dLat) }
+}
+
 export interface DetailStatus {
   /** NASA's picture of the whole world is in (else the land's colours are drawn) */
   photo: boolean
@@ -125,16 +152,23 @@ export interface DetailStatus {
   surface: "off" | "loading" | "sharp" | "failed"
   surfaceError?: string | null
   /** the clouds' sharpening in view: the satellite; the times of the pictures drawn (earliest, latest); the level; the
-   *  tiles drawn with something in them, out of those wanted; and whether every tile has been asked */
-  clouds: { source: CloudSource; fromMs: number; toMs: number; z: number; have: number; want: number; done: boolean; error?: string } | null
+   *  tiles drawn with something in them, out of those wanted; whether every tile has been asked; and whether the
+   *  visible band (the clouds as a camera sees them) is in */
+  clouds: { source: CloudSource; fromMs: number; toMs: number; z: number; have: number; want: number; done: boolean; visible?: boolean; error?: string } | null
 }
 
-export interface TileApi { tile(req: TileReq): Promise<TileAnswer> }
+export interface TileApi {
+  tile(req: TileReq): Promise<TileAnswer>
+  /** the share of this minute's requests already made (0..1) */
+  usage?(): number
+}
 
-interface Built { id: number; rg?: Uint8Array; seen?: number; failed?: number; error?: string }
+interface Built { id: number; px?: Uint8Array; seen?: number; failed?: number; error?: string }
 /** a tile's picture held in memory, and the time of the picture (clouds) */
 interface Held { bytes: Uint8Array; timeMs?: number }
 interface Ask { req: TileReq; generation: number; go: (h: Held | null) => void }
+/** a cloud tile come in: where it goes in the mosaic, its picture and the time of it */
+interface Got { x: number; y: number; key: string; bytes: Uint8Array; timeMs: number }
 
 /** at most this many tiles asked of the tile fetcher at once (older asks wait; those of a view left behind are dropped) */
 const MAX_ASKING = 8
@@ -145,17 +179,25 @@ export const MAX_SIDE_CLOUDS = 5
 /** a build that has not answered in this long is given up */
 const BUILD_TIMEOUT_MS = 30_000
 
-const reqKey = (r: TileReq): string => (r.kind === "surface" ? `s/${r.z}/${r.row}/${r.col}` : `c/${r.source}/${r.timeMs}/${r.z}/${r.row}/${r.col}`)
+const reqKey = (r: TileReq): string => (r.kind === "surface" ? `s/${r.z}/${r.row}/${r.col}` : `c/${r.source}${r.band === "vis" ? "/vis" : ""}/${r.timeMs}/${r.z}/${r.row}/${r.col}`)
+type SurfaceReq = Extract<TileReq, { kind: "surface" }>
 
 export class DetailLoader {
   private cam: GlobeCamera | null = null
   private frame: Frame | null = null
   private movedAt = 0
   private timer: number | null = null
+  private landTimer: number | null = null
+  private landPlannedAt = -Infinity
   private hourMs: number | null = null
   private cloudsOn = true
-  /** the loads under way or on show: each its plan's key and its own generation (a load started again gets a new one) */
-  private surf: { key: string; generation: number } | null = null
+  /** the land's planning round: its generation (asks of an older round not yet sent are dropped), its level, the view's
+   *  own tiles at that level, how many of them are not in yet and how many could not be had */
+  private land: { generation: number; z: number; view: Box; want: Set<string>; own: Set<string>; missing: number; failed: number } | null = null
+  /** the land tiles being fetched and decoded: a tile wanted again meanwhile joins the load under way */
+  private readonly landLoads = new Map<string, Promise<void>>()
+  /** when the tiles fetched ahead were asked, within the last minute */
+  private aheadAt: number[] = []
   private cloud: { key: string; generation: number; source: CloudSource; timeMs: number } | null = null
   /** the satellite and hour of the clouds' detail on show */
   private cloudShown: { source: CloudSource; timeMs: number } | null = null
@@ -174,32 +216,35 @@ export class DetailLoader {
   private building = false
   private buildAgain: (() => void) | null = null
   private status: DetailStatus = { photo: false, surface: "off", clouds: null }
+  private redrawQueued = false
   private disposed = false
 
   constructor(private readonly gl: GlobeGl, private readonly api: TileApi | null, private readonly redraw: () => void, private readonly onStatus?: (s: DetailStatus) => void) {}
 
-  /** The view now (called with every frame drawn): the detail is planned once it stands still. */
+  /** The view now (called with every frame drawn): the land is planned as it moves, the clouds once it stands still. */
   view(cam: GlobeCamera, frame: Frame): void {
     const c = this.cam, f = this.frame
     if (c && f && c.lon === cam.lon && c.lat === cam.lat && c.zoom === cam.zoom && f.w === frame.w && f.h === frame.h && f.r === frame.r) return
     this.cam = { ...cam }
     this.frame = { ...frame }
-    this.movedAt = performance.now()
+    const now = performance.now()
+    this.movedAt = now
     if (this.timer == null) this.timer = window.setTimeout(this.stilled, STILL_MS)
+    if (this.landTimer == null) this.landTimer = window.setTimeout(this.landDue, Math.max(0, this.landPlannedAt + MOVING_PLAN_MS - now))
   }
 
   /** The hour of the world's cloud image (the clouds' detail is of the same hour); null = no image, no detail. */
   setHour(ms: number | null): void {
     if (ms === this.hourMs) return
     this.hourMs = ms
-    this.plan()
+    this.planClouds()
   }
 
   /** whether the clouds show (no cloud tiles are asked while they do not) */
   setClouds(on: boolean): void {
     if (on === this.cloudsOn) return
     this.cloudsOn = on
-    this.plan()
+    this.planClouds()
   }
 
   /** NASA's picture of the whole world is on show, or terminally unreadable for this load. */
@@ -208,8 +253,7 @@ export class DetailLoader {
 
   dispose(): void {
     this.disposed = true
-    if (this.timer != null) window.clearTimeout(this.timer)
-    if (this.retryTimer != null) window.clearTimeout(this.retryTimer)
+    for (const t of [this.timer, this.landTimer, this.retryTimer]) if (t != null) window.clearTimeout(t)
     for (const a of this.queue) a.go(null)
     this.queue.length = 0
     this.worker?.terminate()
@@ -220,21 +264,136 @@ export class DetailLoader {
     this.timer = null
     const quiet = performance.now() - this.movedAt
     if (quiet < STILL_MS) { this.timer = window.setTimeout(this.stilled, STILL_MS - quiet); return }
-    this.plan()
+    this.planClouds()
+    if (this.land?.missing === 0) this.fetchAhead()
+  }
+
+  private readonly landDue = (): void => {
+    this.landTimer = null
+    this.landPlannedAt = performance.now()
+    this.planLand()
   }
 
   private setStatus(s: Partial<DetailStatus>): void {
-    this.status = { ...this.status, ...s }
+    const next = { ...this.status, ...s }
+    if ((Object.keys(s) as Array<keyof DetailStatus>).every((k) => next[k] === this.status[k])) return
+    this.status = next
     this.onStatus?.(this.status)
   }
 
-  private dropSurface(): void {
-    if (!this.surf && this.status.surface === "off") return
-    this.surf = null
-    this.gl.clearSurface()
-    this.setStatus({ surface: "off" })
-    this.redraw()
+  /** One frame for however many tiles came in since the last. */
+  private queueRedraw(): void {
+    if (this.redrawQueued || this.disposed) return
+    this.redrawQueued = true
+    requestAnimationFrame(() => { this.redrawQueued = false; if (!this.disposed) this.redraw() })
   }
+
+  /** the view's degrees a device pixel, and its box when sharper pictures are worth asking for there */
+  private viewNow(): { degPerPx: number; box: Box; cam: GlobeCamera } | null {
+    const cam = this.cam, f = this.frame
+    if (this.disposed || !this.api || !cam || !f) return null
+    const degPerPx = 1 / (f.r * RAD)
+    const box = degPerPx < WORLD_DEG_PER_PX / LEVEL_SLACK ? visibleBox(cam, f) : null
+    return box ? { degPerPx, box, cam } : null
+  }
+
+  // ---- the land ----
+
+  private planLand(): void {
+    const v = this.viewNow()
+    const generation = ++this.generation
+    if (!v) { this.land = null; this.setStatus({ surface: "off", surfaceError: null }); return }
+    // the finest level the screen needs anywhere in the view — where it is nearest the equator, a degree of longitude is
+    // widest on screen — coarser where its tiles and the coarser ones under them would crowd the cache
+    const room = Math.max(8, Math.floor(this.gl.surfaceLayers * VIEW_SHARE))
+    const nearEquator = v.box.south <= 0 && v.box.north >= 0 ? 0 : Math.min(Math.abs(v.box.south), Math.abs(v.box.north))
+    let z = levelFor(v.degPerPx / Math.max(0.05, Math.cos(nearEquator * RAD)), SURFACE_MIN_LEVEL, SURFACE_MAX_LEVEL)
+    let want: SurfaceReq[] = [], own: SurfaceReq[] = []
+    for (;; z--) {
+      // the coarser levels under the view first (a few tiles: something sharp at once), then its own, middle out
+      const plan = tilePlan(v.box, z, room)
+      want = []
+      own = plan ? planTiles(plan).map((t): SurfaceReq => ({ kind: "surface", z, row: t.row, col: t.col })) : []
+      for (let zc = Math.max(SURFACE_MIN_LEVEL, z - 2); plan && zc < z; zc++) {
+        const p = tilePlan(v.box, zc, room)
+        if (p) for (const t of planTiles(p)) want.push({ kind: "surface", z: zc, row: t.row, col: t.col })
+      }
+      want.push(...own)
+      if ((plan && want.length <= room) || z <= SURFACE_MIN_LEVEL) break
+    }
+    if (own.length === 0 || want.length > room) { this.land = null; this.setStatus({ surface: "off", surfaceError: null }); return }
+    // what the view wants stays in the cache: anything else goes first when room is needed
+    this.gl.keepSurfaceTiles(want)
+    const land = { generation, z, view: v.box, want: new Set(want.map(reqKey)), own: new Set(own.map(reqKey)), missing: 0, failed: 0 }
+    this.land = land
+    for (const req of want) {
+      if (this.gl.hasSurfaceTile(req.z, req.row, req.col)) continue
+      if (req.z === z) land.missing++
+      void this.loadLandTile(req, generation)
+    }
+    this.landStatus()
+    if (land.missing === 0) this.fetchAhead()
+  }
+
+  /** A land tile fetched, decoded and put in the cache — once, however often it is wanted meanwhile. */
+  private loadLandTile(req: SurfaceReq, generation: number): Promise<void> {
+    const k = reqKey(req)
+    const running = this.landLoads.get(k)
+    // under way already: the newer round takes over its ask (so it is not dropped as an older round's)
+    if (running) { void this.fetch(req, generation); return running }
+    const load = this.loadLandTileOnce(req, generation).finally(() => this.landLoads.delete(k))
+    this.landLoads.set(k, load)
+    return load
+  }
+
+  private async loadLandTileOnce(req: SurfaceReq, generation: number): Promise<void> {
+    const h = await this.fetch(req, generation)
+    const own = this.land?.own.has(reqKey(req)) === true
+    if (!h) { if (own && this.land) { this.land.failed++; this.landStatus() } return }
+    if (this.disposed || this.gl.hasSurfaceTile(req.z, req.row, req.col)) return
+    const img = await createImageBitmap(new Blob([h.bytes as BlobPart], { type: "image/jpeg" })).catch(() => null)
+    if (!img) { if (own && this.land) { this.land.failed++; this.landStatus("a surface tile could not be decoded; the world picture fills its place") } return }
+    // a tile of a view already left is kept all the same (it may well be wanted again), never in place of the view's own
+    if (!this.disposed && !this.gl.hasSurfaceTile(req.z, req.row, req.col) && this.gl.putSurfaceTile(req.z, req.row, req.col, img, this.land?.want.has(reqKey(req)) === true)) {
+      this.queueRedraw()
+      const land = this.land
+      if (land && land.own.has(reqKey(req)) && --land.missing === 0) this.fetchAhead()
+      this.landStatus()
+    }
+    img.close()
+  }
+
+  private landStatus(error?: string): void {
+    const land = this.land
+    if (!land) return
+    const size = land.own.size
+    if (land.missing === 0 || land.missing < size) this.setStatus({ surface: "sharp", surfaceError: error ?? null })
+    else if (land.failed >= size) this.setStatus({ surface: "failed", surfaceError: error ?? "no surface tiles available" })
+    else this.setStatus({ surface: "loading", surfaceError: error ?? null })
+  }
+
+  /** The next level's tiles for the middle of the view, into the GPU cache, while nothing else is asked — so zooming
+   *  in finds them at hand — within a few a minute, to stay a polite client. */
+  private fetchAhead(): void {
+    const land = this.land
+    if (this.disposed || !land || land.z >= SURFACE_MAX_LEVEL || this.queue.length > 0 || this.inFlight > 0) return
+    const now = performance.now()
+    // only once the view stands still (not for views passed on the way), and while the minute's requests allow
+    if (now - this.movedAt < STILL_MS || (this.api?.usage?.() ?? 0) > AHEAD_MAX_USAGE) return
+    this.aheadAt = this.aheadAt.filter((t) => now - t < 60_000)
+    let budget = Math.min(AHEAD_MAX, AHEAD_PER_MIN - this.aheadAt.length)
+    const finer = budget > 0 ? tilePlan(middleOf(land.view, AHEAD_SHARE), land.z + 1, 64) : null
+    if (!finer) return
+    for (const t of planTiles(finer)) {
+      if (budget <= 0) break
+      if (this.gl.hasSurfaceTile(finer.z, t.row, t.col)) continue
+      budget--
+      this.aheadAt.push(now)
+      void this.loadLandTile({ kind: "surface", z: finer.z, row: t.row, col: t.col }, land.generation)
+    }
+  }
+
+  // ---- the clouds ----
 
   private dropClouds(): void {
     if (!this.cloud && !this.cloudShown && !this.status.clouds) return
@@ -242,115 +401,82 @@ export class DetailLoader {
     this.cloudShown = null
     this.gl.setCloudDetail(null)
     this.setStatus({ clouds: null })
-    this.redraw()
+    this.queueRedraw()
   }
 
-  private plan(): void {
-    const cam = this.cam, f = this.frame
-    if (this.disposed || !this.api || !cam || !f) return
-    const degPerPx = 1 / (f.r * RAD)
-    const box = degPerPx < WORLD_DEG_PER_PX / LEVEL_SLACK ? visibleBox(cam, f) : null
-    if (!box) { this.dropSurface(); this.dropClouds(); return }
+  private planClouds(): void {
+    const v = this.viewNow()
+    if (!v) { this.dropClouds(); return }
     const fits = Math.max(1, this.gl.maxSharpTiles)
-    // the surface: the finest level the screen needs, coarser where the view would want too many tiles
-    let z = levelFor(degPerPx, SURFACE_MIN_LEVEL, SURFACE_MAX_LEVEL), plan = tilePlan(box, z, Math.min(MAX_SIDE, fits))
-    while (!plan && z > SURFACE_MIN_LEVEL) plan = tilePlan(box, --z, Math.min(MAX_SIDE, fits))
-    if (!plan) this.dropSurface()
-    else if (planKey(plan) !== this.surf?.key) this.loadSurface(plan)
-    // the clouds: the satellite overhead, at the world image's hour
-    const src = this.cloudsOn && this.hourMs != null ? bestSource(cam.lat, cam.lon) : null
+    // the satellite overhead, at the world image's hour
+    const src = this.cloudsOn && this.hourMs != null ? bestSource(v.cam.lat, v.cam.lon) : null
     let cp: TilePlan | null = null
     if (src) {
-      let zc = levelFor(degPerPx, CLOUD_MIN_LEVEL, CLOUD_SOURCES[src].maxLevel)
-      cp = tilePlan(box, zc, Math.min(MAX_SIDE_CLOUDS, fits))
-      while (!cp && zc > CLOUD_MIN_LEVEL) cp = tilePlan(box, --zc, Math.min(MAX_SIDE_CLOUDS, fits))
+      let zc = levelFor(v.degPerPx, CLOUD_MIN_LEVEL, CLOUD_SOURCES[src].maxLevel)
+      cp = tilePlan(v.box, zc, Math.min(MAX_SIDE_CLOUDS, fits))
+      while (!cp && zc > CLOUD_MIN_LEVEL) cp = tilePlan(v.box, --zc, Math.min(MAX_SIDE_CLOUDS, fits))
     }
     if (!src || !cp || this.hourMs == null) { this.dropClouds(); return }
     const key = `${src}|${this.hourMs}|${planKey(cp)}`
     if (key !== this.cloud?.key) this.loadClouds(src, this.hourMs, cp, key)
   }
 
-  private loadSurface(plan: TilePlan): void {
-    const key = planKey(plan), generation = ++this.generation
-    this.surf = { key, generation }
-    this.gl.beginSurface(key, plan.box, plan.cols * TILE_PX, plan.rows * TILE_PX)
-    this.setStatus({ surface: "loading", surfaceError: null })
-    const tiles = planTiles(plan)
-    const mine = () => this.surf?.generation === generation && !this.disposed
-    let done = 0, put = 0, shown = false, late = false, decodeFailures = 0
-    const show = () => {
-      if (shown || !mine() || put === 0) return
-      shown = true
-      this.gl.showSurface(key)
-      this.setStatus({ surface: "sharp" })
-      this.redraw()
-    }
-    const deadline = window.setTimeout(() => { late = true; show() }, SHOW_WITHIN_MS)
-    for (const t of tiles) {
-      void this.fetch({ kind: "surface", z: plan.z, row: t.row, col: t.col }, generation).then(async (h) => {
-        if (!h || !mine()) return
-        const img = await createImageBitmap(new Blob([h.bytes as BlobPart], { type: "image/jpeg" }))
-        if (mine()) {
-          this.gl.putSurfaceTile(key, t.i * TILE_PX, t.j * TILE_PX, img)
-          put++
-          if (shown) this.redraw()
-          else if (late) show()
-        }
-        img.close()
-      }).catch(() => { decodeFailures++ }).finally(() => {
-        if (++done < tiles.length || !mine()) return
-        window.clearTimeout(deadline)
-        if (put > 0) {
-          show()
-          if (decodeFailures) this.setStatus({ surfaceError: `${decodeFailures} of ${tiles.length} tiles could not be decoded; the world picture fills those gaps` })
-        } else this.setStatus({ surface: "failed", surfaceError: decodeFailures ? `${decodeFailures} of ${tiles.length} tiles could not be decoded` : "no surface tiles available" })
-      })
-    }
-  }
-
   private loadClouds(src: CloudSource, timeMs: number, plan: TilePlan, key: string): void {
     const generation = ++this.generation
     this.cloud = { key, generation, source: src, timeMs }
-    // another satellite or hour: what is on show is not of it, so it goes at once
-    if (this.cloudShown && (this.cloudShown.source !== src || this.cloudShown.timeMs !== timeMs)) {
+    // another hour: what is on show is not of it, so it goes at once (another satellite's picture of the same hour shows
+    // the same clouds, and stays until this one is built)
+    if (this.cloudShown && this.cloudShown.timeMs !== timeMs) {
       this.cloudShown = null
       this.gl.setCloudDetail(null)
-      this.redraw()
+      this.queueRedraw()
     }
     const mine = () => this.cloud?.generation === generation && !this.disposed
     const tiles = planTiles(plan)
-    const got: Array<{ x: number; y: number; key: string; bytes: Uint8Array; timeMs: number }> = []
+    // by day there, the visible band too
+    const mid = middleOf(plan.box, 0)
+    const visible = sunCosAt((mid.south + mid.north) / 2, (mid.west + mid.east) / 2, subsolarPoint(timeMs)) > VIS_SUN_COS
+    const got: Got[] = [], gotVis: Got[] = []
+    const total = tiles.length * (visible ? 2 : 1)
     let done = 0, pending: number | null = null
-    const status = (have: number, fromMs: number, toMs: number, error?: string) =>
-      this.setStatus({ clouds: { source: src, fromMs, toMs, z: plan.z, have, want: tiles.length, done: done === tiles.length, error } })
+    const status = (have: number, fromMs: number, toMs: number, error?: string, vis = false) =>
+      this.setStatus({ clouds: { source: src, fromMs, toMs, z: plan.z, have, want: tiles.length, done: done === total, visible: vis, error } })
     status(0, timeMs, timeMs)
+    const startedAt = performance.now()
     const build = () => {
       pending = null
       if (!mine()) return
-      if (got.length === 0) { status(0, timeMs, timeMs); return }
-      const parts = [...got], times = parts.map((p) => p.timeMs)
+      if (got.length === 0 && gotVis.length === 0) { status(0, timeMs, timeMs); return }
+      // while an earlier detail is on show, a part-built one would leave holes in it: it waits a moment for the rest
+      if (done < total && this.cloudShown && performance.now() - startedAt < CLOUD_SHOW_WITHIN_MS) { pending = window.setTimeout(build, REBUILD_MS); return }
+      const parts = [...got], visParts = [...gotVis], times = [...parts, ...visParts].map((p) => p.timeMs)
       this.build({
-        w: plan.cols * TILE_PX, h: plan.rows * TILE_PX, blurPx: blurRadius(plan.z),
+        w: plan.cols * TILE_PX, h: plan.rows * TILE_PX, blurPx: blurRadius(plan.z), timeMs,
         area: { west: plan.box.west, north: plan.box.north, res: tileRes(plan.z), subLon: CLOUD_SOURCES[src].subLon },
         tiles: parts.map(({ x, y, key: k, bytes }) => ({ x, y, key: k, bytes })),
+        vis: visParts.map(({ x, y, key: k, bytes }) => ({ x, y, key: k, bytes })),
       }, (b) => {
         if (!mine()) return
-        if (b.error || !b.rg) { status(0, timeMs, timeMs, b.error ?? "cloud detail decode failed"); return }
-        this.gl.setCloudDetail({ key, box: plan.box, w: plan.cols * TILE_PX, h: plan.rows * TILE_PX, rg: b.rg })
+        if (b.error || !b.px) { status(0, timeMs, timeMs, b.error ?? "cloud detail decode failed"); return }
+        this.gl.setCloudDetail({ key, box: plan.box, w: plan.cols * TILE_PX, h: plan.rows * TILE_PX, px: b.px })
         this.cloudShown = { source: src, timeMs }
-        status(b.seen ?? 0, Math.min(...times), Math.max(...times), b.failed ? `${b.failed} of ${parts.length} fetched tiles could not be decoded` : undefined)
-        this.redraw()
+        status(b.seen ?? 0, Math.min(...times), Math.max(...times), b.failed ? `${b.failed} of ${parts.length + visParts.length} fetched tiles could not be decoded` : undefined, visParts.length > 0)
+        this.queueRedraw()
+      })
+    }
+    const ask = (t: { i: number; j: number; row: number; col: number }, band: "vis" | undefined, into: Got[]) => {
+      const req: TileReq = band ? { kind: "clouds", source: src, timeMs, z: plan.z, row: t.row, col: t.col, band } : { kind: "clouds", source: src, timeMs, z: plan.z, row: t.row, col: t.col }
+      void this.fetch(req, generation).then((h) => {
+        if (h && mine()) into.push({ x: t.i * TILE_PX, y: t.j * TILE_PX, key: reqKey(req), bytes: h.bytes, timeMs: h.timeMs ?? timeMs })
+      }).finally(() => {
+        if (!mine()) return
+        if (++done === total) { if (pending != null) window.clearTimeout(pending); build() }
+        else if (pending == null) pending = window.setTimeout(build, REBUILD_MS)
       })
     }
     for (const t of tiles) {
-      const req: TileReq = { kind: "clouds", source: src, timeMs, z: plan.z, row: t.row, col: t.col }
-      void this.fetch(req, generation).then((h) => {
-        if (h && mine()) got.push({ x: t.i * TILE_PX, y: t.j * TILE_PX, key: reqKey(req), bytes: h.bytes, timeMs: h.timeMs ?? timeMs })
-      }).finally(() => {
-        if (!mine()) return
-        if (++done === tiles.length) { if (pending != null) window.clearTimeout(pending); build() }
-        else if (pending == null) pending = window.setTimeout(build, REBUILD_MS)
-      })
+      ask(t, undefined, got)
+      if (visible) ask(t, "vis", gotVis)
     }
   }
 
@@ -392,10 +518,12 @@ export class DetailLoader {
       const timer = window.setTimeout(() => { if (this.jobs.delete(id)) resolve({ id, error: "the build took too long" }) }, BUILD_TIMEOUT_MS)
       this.jobs.set(id, (b) => { window.clearTimeout(timer); resolve(b) })
       // copies go to the worker: the window keeps its own for the next build
-      const tiles = job.tiles.map((t) => ({ ...t, bytes: t.bytes.slice() }))
-      w.postMessage({ ...job, id, tiles } satisfies WorkerJob, tiles.map((t) => t.bytes.buffer))
+      const tiles = job.tiles.map((t) => ({ ...t, bytes: t.bytes.slice() })), vis = job.vis.map((t) => ({ ...t, bytes: t.bytes.slice() }))
+      w.postMessage({ ...job, id, tiles, vis } satisfies WorkerJob, [...tiles, ...vis].map((t) => t.bytes.buffer))
     })
   }
+
+  // ---- the tiles ----
 
   /** A tile's picture for a load: held, or asked of the tile fetcher; null when there is none now. */
   private fetch(req: TileReq, generation: number): Promise<Held | null> {
@@ -420,14 +548,15 @@ export class DetailLoader {
     return entry.promise
   }
 
-  /** Sends queued asks while fewer than MAX_ASKING are out, newest view first; an ask of a load no longer current is
+  /** Sends queued asks while fewer than MAX_ASKING are out, in the order asked; an ask of a round no longer current is
    *  dropped without being sent. */
   private pump(): void {
+    if (this.disposed) return
     while (this.inFlight < MAX_ASKING && this.queue.length) {
       const ask = this.queue.shift()!
       const entry = this.asking.get(reqKey(ask.req))
       if (entry) entry.ask = null
-      if (ask.generation !== this.surf?.generation && ask.generation !== this.cloud?.generation) { ask.go(null); continue }
+      if (ask.generation !== this.land?.generation && ask.generation !== this.cloud?.generation) { ask.go(null); continue }
       this.inFlight++
       void this.api!.tile(ask.req).catch((): TileAnswer => ({ none: "failed" })).then((a) => {
         const k = reqKey(ask.req)
@@ -441,25 +570,30 @@ export class DetailLoader {
           ask.go({ bytes: a.bytes, timeMs: a.timeMs })
           return
         }
-        this.retryAt.set(k, Date.now() + (a.none === "missing" ? 3600_000 : RETRY_MS))
+        this.retryAt.set(k, Date.now() + (a.none === "missing" ? 3600_000 : a.none === "busy" ? BUSY_RETRY_MS : RETRY_MS))
         ask.go(null)
-        if (a.none === "failed") this.retrySoon()
-      }).finally(() => { this.inFlight--; this.pump() })
+        if (a.none !== "missing") this.retrySoon(a.none === "busy" ? BUSY_RETRY_MS : RETRY_MS)
+      }).finally(() => {
+        this.inFlight--
+        this.pump()
+        // the network gone idle with the view's land in: the next level ahead
+        if (this.inFlight === 0 && this.queue.length === 0 && this.land?.missing === 0) this.fetchAhead()
+      })
     }
   }
 
   /** A tile could not be had now: the view is planned again once it may be asked again (even if it stands still). */
-  private retrySoon(): void {
+  private retrySoon(afterMs: number): void {
     if (this.retryTimer != null || this.disposed) return
     this.retryTimer = window.setTimeout(() => {
       this.retryTimer = null
       const now = Date.now()
       for (const [k, t] of this.retryAt) if (t <= now) this.retryAt.delete(k)
       // the same plans load again: what is held comes at once, what failed is asked again
-      if (this.surf) this.surf = { ...this.surf, key: "" }
       if (this.cloud) this.cloud = { ...this.cloud, key: "" }
-      this.plan()
-    }, RETRY_MS + 1000)
+      this.planLand()
+      this.planClouds()
+    }, afterMs + 1000)
   }
 }
 
@@ -468,6 +602,10 @@ export interface WorkerJob {
   w: number
   h: number
   blurPx: number
+  /** the hour of the pictures (the visible band is weighed by the sun's height then) */
+  timeMs: number
   area: { west: number; north: number; res: number; subLon: number }
   tiles: Array<{ x: number; y: number; key: string; bytes: Uint8Array }>
+  /** the visible band's tiles, by day */
+  vis: Array<{ x: number; y: number; key: string; bytes: Uint8Array }>
 }

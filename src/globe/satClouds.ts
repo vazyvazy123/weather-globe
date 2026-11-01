@@ -38,7 +38,9 @@ const ZONAL_Q = 0.2, LOCAL_Q = 0.15
 /** how far a cold surface may lift the clear-sky level above its latitude's */
 const CLEAR_LIFT = 25
 /** brightness above the clear sky where cloud starts, and where it is full */
-const CLOUD_FROM = 8, CLOUD_FULL = 70
+const CLOUD_FROM = 14, CLOUD_FULL = 70
+/** the columns at each edge of the image that may be empty (the map service's, at the date line) */
+const EDGE_PX = 2
 /** the brightness of high, cold cloud tops */
 const HIGH_FROM = 170, HIGH_FULL = 215
 /** the latitude band the clear level of a row is smoothed over (°) */
@@ -124,6 +126,21 @@ export function satCloudField(img: SatImage): Uint8Array {
       out[k * 4] = Math.round(cloud * 255)
       out[k * 4 + 1] = Math.round(smooth(HIGH_FROM, HIGH_FULL, g) * cloud * 255)
       out[k * 4 + 3] = alpha == null ? 255 : alpha[k]
+    }
+  }
+  // the map service leaves the image's first and last columns empty: at the date line, where they meet, an empty column
+  // would draw a seam down the globe — they take the nearest covered pixel's values in their row
+  if (alpha != null) {
+    for (let y = 0; y < h; y++) {
+      for (const x of [...Array(EDGE_PX).keys(), ...Array.from({ length: EDGE_PX }, (_, k) => w - 1 - k)]) {
+        const k = y * w + x
+        if (covered(k)) continue
+        const inward = x < w / 2 ? 1 : -1
+        for (let d = 1; d <= 2 * EDGE_PX; d++) {
+          const j = y * w + x + inward * d
+          if (covered(j)) { out.copyWithin(k * 4, j * 4, j * 4 + 4); break }
+        }
+      }
     }
   }
   return out

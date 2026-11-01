@@ -14,7 +14,9 @@ weather data directly from the providers listed below.
 
 - **Hand-written WebGL2, no 3D library.** The whole globe is one fragment shader over one full-screen triangle: it
   ray-casts the sphere per pixel (orthographic), samples NASA's Blue Marble, cuts crisp coastlines from a land mask,
-  shades the sun's real terminator with a twilight band and an ocean glint, draws a translucent cloud shell above the
+  colours the sea by its floor (NASA's shaded relief and bathymetry: bright shelves, dark deeps, ridges and trenches)
+  with the sky's reflection toward the limb and a sun glint that breaks into wave sparkle up close, shades the sun's
+  real terminator with a twilight band, draws a translucent cloud shell above the
   surface (with parallax, sunset colouring, cloud shadows on the ground and lightning in thunderstorms) and an
   atmospheric limb glow. No three.js, no globe.gl.
 - **A satellite infrared decoding pipeline.** NOAA's global infrared mosaic is turned into a cloud field in a Web Worker
@@ -22,9 +24,15 @@ weather data directly from the providers listed below.
   the coldest are high cloud). Zoomed in, NASA GIBS's colour-mapped band-13 tiles from GOES-East, GOES-West and
   Himawari are **inverted back into brightness temperatures** (including blended and resampled colours at cloud edges),
   and their fine structure — how much colder each point is than its surroundings — sharpens the cloud tops.
-- **Zoom-in detail tiles.** When the view settles, the visible box is computed from the camera, the right GIBS level is
-  chosen for the screen's pixel size, and the tiles are fetched (middle first, rate-limited, de-duplicated) and laid
-  into one GPU texture that fades in over the world picture.
+- **The clouds as a camera sees them, by day.** Zoomed in where the sun is up, the same satellites' red visible band
+  (every 10 minutes, read at about 2 km a pixel) is weighed against the clear ground around each pixel and the sun's height at the picture's
+  time, and draws the clouds with their real shapes, texture and shading — cumulus fields, cirrus veils, storm tops.
+- **A GPU tile cache for the land, sharp as you zoom.** NASA's Blue Marble tiles live in a texture array on the GPU
+  (one 512-px tile a layer) with a page table saying which layer holds which tile of which level. Each pixel computes
+  the level its size on screen calls for and shows the finest tile held there or coarser, each fading in as it
+  arrives — so the land sharpens tile by tile while you zoom and drag, coarse levels first, never waiting for a whole
+  view. The view's tiles are planned as it moves (middle first, rate-limited, de-duplicated, least recently wanted
+  evicted first), and the next level's tiles for the middle of the view are fetched ahead while the network is idle.
 - **Weather-model clouds where the satellite is blind.** Open-Meteo's cloud cover on a coarse world grid fills the
   poles and the low cloud infrared cannot see; it is baked into a 4096 × 2048 cloud map with domain-warped noise, a
   strip per frame, so redraws cost the CPU nothing.
@@ -34,7 +42,18 @@ weather data directly from the providers listed below.
 - **Sounds of the world.** ♪ Music marks the cities that have songs; click one (or any city of that country) and its
   song plays on a hand-drawn SVG cassette whose tape winds from reel to reel as the preview plays. Next walks the world
   west to east and the globe flies along; shuffle hops between countries. The cover, the singer's photo and the weather
-  where the song is from sit beside the cassette; the OS media keys and lock screen show the song too.
+  where the song is from sit beside the cassette; one volume (with mute) for every song, kept between visits; the OS
+  media keys and lock screen show the song too.
+
+## Sounds of the world
+
+![The globe with the music on: Omar Souleyman's "Leh Jani" playing from Baghdad, the cities with songs marked ♪, and
+Baghdad's panel listing the songs from Iraq](docs/music.png)
+
+<p align="center">
+  <img src="docs/player.png" width="384" alt="The player up close: the album cover, the singer's photo, the weather in
+  Baghdad, the cassette with its reels winding, the seek bar, the controls and the volume">
+</p>
 
 ## Run it
 
@@ -80,8 +99,8 @@ src/
   globe/      the renderer and its pipelines
     globeGl.ts      WebGL2 renderer: the frame shader and the cloud-map bake shader
     camera.ts       camera state outside React (drag, zoom, fly-to, tour)
-    detail.ts       zoom-in detail: visible box, tile plan, fetch queue, worker builds
-    detailWorker.ts IR tiles → temperatures → cloud fine structure (off the main thread)
+    detail.ts       zoom-in detail: visible box, the land's tiles as the view moves, fetch queue, worker builds
+    detailWorker.ts IR tiles → temperatures → cloud fine structure; visible tiles → clouds (off the main thread)
     irDecode.ts     NASA GIBS band-13 colour map inverted to °C; fine-structure filter
     satClouds.ts    global IR mosaic → cloud / high-cloud field
     satDecode.ts, satWorker.ts   PNG decode + cloud mapping in a worker
@@ -89,6 +108,7 @@ src/
     landMask.ts     land / coast / inland mask rasterised from Natural Earth
     labels.ts       label placement
     declutter.ts    which markers show where many cities crowd
+    visDecode.ts    a satellite's visible band → the clouds as a camera sees them
   data/       the browser-side fetchers, each throttled and cached
     tileFetcher.ts  NASA GIBS Blue Marble + IR tiles (Cache Storage for surface tiles)
     satellite.ts    NOAA nowCOAST GMGSI mosaic (time list + image)
@@ -119,7 +139,7 @@ is published, Blue Marble tiles are kept in the browser's Cache Storage, tile re
 | Source | Used for | Terms |
 | --- | --- | --- |
 | **NOAA** — [nowCOAST](https://nowcoast.noaa.gov/) Global Mosaic of Geostationary Satellite Imagery (GMGSI, longwave IR) | the world's clouds | U.S. Government work, public domain. Credit: NOAA. |
-| **NASA GIBS** — [Global Imagery Browse Services](https://earthdata.nasa.gov/gibs): Blue Marble Next Generation; GOES-East, GOES-West and Himawari ABI/AHI band 13 clean infrared | land imagery, zoom-in cloud detail | Free and open. Please credit: "We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS)." GOES imagery originates from NOAA; Himawari imagery from JMA. |
+| **NASA GIBS** — [Global Imagery Browse Services](https://earthdata.nasa.gov/gibs): Blue Marble Next Generation and Shaded Relief with Bathymetry; GOES-East, GOES-West and Himawari ABI/AHI band 13 clean infrared and red visible (band 2 / band 3) | land imagery, the sea's colour, zoom-in cloud detail | Free and open. Please credit: "We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS)." GOES imagery originates from NOAA; Himawari imagery from JMA. |
 | **Natural Earth** — [naturalearthdata.com](https://www.naturalearthdata.com/) 1:50m and 1:110m land (via world-atlas) | coastlines, land mask, SVG fallback | Public domain. |
 | **Open-Meteo** — [open-meteo.com](https://open-meteo.com/) Forecast API | city temperatures and conditions, model cloud grid | Free for **non-commercial** use, data under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Credit: "Weather data by Open-Meteo.com". See the [terms](https://open-meteo.com/en/terms); commercial use needs an API subscription. |
 | **Apple** — [iTunes Search API](https://performance-partners.apple.com/search-api) | 30-second song previews, covers, Apple Music links | Previews and artwork are Apple's and the labels'; they may be used to promote the music, linking back to it (each song links to Apple Music and YouTube). No API key; the page itself makes no API call — only the preview and cover files load. |

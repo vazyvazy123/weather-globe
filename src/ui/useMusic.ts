@@ -8,7 +8,10 @@ import { nextShuffle, SHUFFLE_MEMORY, type Track } from "../data/music"
 //    button continues;
 //  - a preview that fails to load is skipped, at most MAX_SKIPS in a row; past that the state is "unavailable" (offline,
 //    or the site's policy blocks the audio) and the play button tries the song again;
-//  - the operating system's media keys and lock screen show the song (Media Session).
+//  - the operating system's media keys and lock screen show the song (Media Session);
+//  - one volume for every song, kept between visits; the slider's position is squared into the element's volume, so
+//    the quiet end has room to move (hearing is logarithmic). Where the browser fixes the volume (iPhone, iPad) only
+//    muting is offered.
 
 export type PlayStatus = "idle" | "loading" | "playing" | "paused" | "blocked" | "error" | "unavailable"
 
@@ -26,6 +29,13 @@ export interface Music {
   prev: () => void
   stop: () => void
   setShuffle: (on: boolean) => void
+  /** the volume slider's position, 0..1 */
+  volume: number
+  muted: boolean
+  /** false where the browser does not let a page set the volume (only muting works there) */
+  volumeAdjustable: boolean
+  setVolume: (v: number) => void
+  toggleMute: () => void
 }
 
 const MAX_SKIPS = 3
@@ -33,6 +43,31 @@ const SKIP_AFTER_MS = 1200
 /** "previous" restarts the song once this far in */
 const RESTART_AFTER_S = 3
 const HISTORY = 50
+
+const VOLUME_KEY = "weather-globe:volume"
+export const DEFAULT_VOLUME = 0.8
+
+/** A stored slider position, or `fallback` when there is none or it is not a number from 0 to 1. */
+export function parseVolume(raw: string | null, fallback = DEFAULT_VOLUME): number {
+  if (raw == null || raw.trim() === "") return fallback
+  const v = Number(raw)
+  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : fallback
+}
+
+/** The element's volume for a slider position: squared, so equal steps of the slider sound like equal steps. */
+export const loudness = (position: number): number => Math.max(0, Math.min(1, position)) ** 2
+
+const readVolume = (): number => { try { return parseVolume(globalThis.localStorage?.getItem(VOLUME_KEY) ?? null) } catch { return DEFAULT_VOLUME } }
+
+/** Whether this browser lets a page set a media element's volume (iOS keeps it at 1, for the hardware buttons). */
+function canSetVolume(a: HTMLAudioElement | null): boolean {
+  if (!a) return false
+  const before = a.volume
+  a.volume = 0.5
+  const ok = Math.abs(a.volume - 0.5) < 0.01
+  a.volume = before
+  return ok
+}
 
 /** a play() the browser held back for want of a click (other failures arrive as the element's error event) */
 const notAllowed = (err: unknown): boolean => err instanceof DOMException && err.name === "NotAllowedError"
@@ -49,6 +84,28 @@ export function useMusic(order: readonly Track[]): Music {
   /** failed songs skipped in a row, and the pending skip past the latest */
   const skips = useRef(0)
   const skipTimer = useRef<number | undefined>(undefined)
+  const [volume, setVolumeState] = useState(readVolume)
+  const [muted, setMuted] = useState(false)
+  const volumeAdjustable = useMemo(() => canSetVolume(audio), [audio])
+
+  // the one volume, for whatever song is on now or next
+  useEffect(() => {
+    if (!audio) return
+    if (volumeAdjustable) audio.volume = loudness(volume)
+    audio.muted = muted
+  }, [audio, volume, muted, volumeAdjustable])
+  const setVolume = useCallback((v: number) => {
+    const next = Math.max(0, Math.min(1, v))
+    setVolumeState(next)
+    // moving the slider up speaks again
+    if (next > 0) setMuted(false)
+    try { globalThis.localStorage?.setItem(VOLUME_KEY, String(next)) } catch { /* the level lasts this visit only */ }
+  }, [])
+  // unmuting a slider left at nothing brings it back to the usual level
+  const toggleMute = useCallback(() => {
+    if (muted || volume === 0) { setMuted(false); if (volume === 0) setVolume(DEFAULT_VOLUME) }
+    else setMuted(true)
+  }, [muted, volume, setVolume])
 
   const resume = useCallback((i: number) => {
     audio?.play().catch((err: unknown) => { if (at.current === i && notAllowed(err)) setStatus("blocked") })
@@ -176,5 +233,5 @@ export function useMusic(order: readonly Track[]): Music {
     return () => { for (const [action] of handlers) { try { ms.setActionHandler(action, null) } catch { /* not supported here */ } } }
   }, [audio, toggle, next, prev, stop])
 
-  return { track, status, shuffle, audio, playId, playWorld, toggle, next, prev, stop, setShuffle }
+  return { track, status, shuffle, audio, playId, playWorld, toggle, next, prev, stop, setShuffle, volume, muted, volumeAdjustable, setVolume, toggleMute }
 }

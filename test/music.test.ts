@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { CITIES } from "../src/data/cities"
 import { checkTracks, countryName, nextShuffle, TRACKS, tracksForCity, worldOrder, youtubeSearchUrl, type Track } from "../src/data/music"
+import { DEFAULT_VOLUME, loudness, parseVolume } from "../src/ui/useMusic"
 
 const cities = [
   { id: "w", lon: -100, country: "US" },
@@ -78,5 +79,24 @@ describe("the music catalog", () => {
     const ids = new Set(CITIES.map((c) => c.id))
     for (const t of TRACKS) expect(ids.has(t.city)).toBe(true)
     expect(new Set(TRACKS.map((t) => t.id)).size).toBe(TRACKS.length)
+  })
+})
+
+describe("the volume", () => {
+  test("a stored level is read back; nothing stored, or anything odd, gives the usual level", () => {
+    expect(parseVolume("0.35")).toBe(0.35)
+    expect(parseVolume("0")).toBe(0)
+    expect(parseVolume("1")).toBe(1)
+    for (const bad of [null, "", "  ", "loud", "NaN", "-0.2", "1.5", "Infinity"]) expect(parseVolume(bad)).toBe(DEFAULT_VOLUME)
+    expect(parseVolume(null, 0.5)).toBe(0.5)
+  })
+
+  test("the slider is squared into loudness: silent and full at its ends, room at the quiet end", () => {
+    expect(loudness(0)).toBe(0)
+    expect(loudness(1)).toBe(1)
+    expect(loudness(0.5)).toBeCloseTo(0.25)
+    expect(loudness(-1)).toBe(0)
+    expect(loudness(2)).toBe(1)
+    for (let p = 0.1; p <= 1; p += 0.1) expect(loudness(p)).toBeGreaterThan(loudness(p - 0.1))
   })
 })

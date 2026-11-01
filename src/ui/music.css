@@ -113,10 +113,17 @@
 
 .dock-time { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 8px; margin-top: 4px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
 .dock-time span:last-child { text-align: right; }
-.dock-time input { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; margin: 0; border-radius: 2px; cursor: pointer;
+.dock-range { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; margin: 0; border-radius: 2px; cursor: pointer;
   background: linear-gradient(90deg, var(--s1), var(--s2)) 0 / var(--p, 0%) 100% no-repeat, rgba(255, 255, 255, 0.14); }
-.dock-time input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15), 0 2px 6px rgba(0, 0, 0, 0.5); }
-.dock-time input::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15), 0 2px 6px rgba(0, 0, 0, 0.5); }
+.dock-range::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15), 0 2px 6px rgba(0, 0, 0, 0.5); }
+.dock-range::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15), 0 2px 6px rgba(0, 0, 0, 0.5); }
+
+/* the volume: a mute button and a slim slider under the controls */
+.dock-volume { display: flex; align-items: center; gap: 6px; max-width: 220px; margin: 6px auto 0; }
+.dock-volume .dock-range { height: 3px; }
+.dock-icon.small { flex: none; width: 28px; height: 28px; }
+.dock-icon.small .ic { width: 16px; height: 16px; }
+.dock-icon.small[aria-pressed="true"] { color: var(--warn); }
 
 .dock-controls { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
 .dock-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: var(--ink-3); transition: color 160ms, background-color 160ms; }

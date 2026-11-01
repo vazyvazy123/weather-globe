@@ -64,7 +64,9 @@ function detailCaption(d: DetailStatus | null): string | null {
   else if (d.surface === "failed") parts.push("land: detail tiles unavailable")
   if (d.clouds) {
     const src = CLOUD_SOURCES[d.clouds.source]
-    parts.push(d.clouds.have > 0 ? `clouds sharpened by ${src.name} (${src.by}) ${utcTime(d.clouds.toMs)}` : `loading ${src.name} infrared tiles…`)
+    parts.push(d.clouds.have > 0
+      ? d.clouds.visible ? `clouds as ${src.name} (${src.by}) saw them, ${utcTime(d.clouds.toMs)}` : `clouds sharpened by ${src.name} (${src.by}) ${utcTime(d.clouds.toMs)}`
+      : `loading ${src.name} tiles…`)
   }
   return parts.length ? parts.join(" · ") : null
 }
