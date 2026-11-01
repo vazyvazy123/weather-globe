@@ -290,8 +290,9 @@ void main() {
       // the sea as its floor colours it; where the picture's pixel is part land (at a coast) the drawn shallows stay
       vec3 bed = sampleWrapped(u_bathy, uvOf(ll)).rgb;
       float seaPx = smoothstep(0.0, 0.06, bed.b - max(bed.r, bed.g * 0.85));
-      // (the deep lifted a little toward blue, so it reads as sea rather than black)
-      ocean = mix(ocean, bed * vec3(0.95, 1.1, 1.22) + vec3(0.0, 0.006, 0.02), seaPx);
+      // (lifted on a curve and toward blue: the deep as bright as the drawn sea was, the shelves brighter still, the relief
+      // kept)
+      ocean = mix(ocean, pow(bed, vec3(0.8)) * vec3(1.0, 1.12, 1.2), seaPx);
     }
     ocean = mix(ocean, vec3(0.70, 0.80, 0.88), smoothstep(70.0, 80.0, alat) * 0.35);
     vec3 ground = mix(vec3(0.17, 0.40, 0.29), vec3(0.40, 0.46, 0.28), smoothstep(0.5, 0.95, inland));
