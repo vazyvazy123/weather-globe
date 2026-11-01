@@ -13,6 +13,7 @@ import type { SatField } from "../globe/satClouds"
 import { DetailLoader, type DetailStatus } from "../globe/detail"
 import type { TileFetcher } from "../data/tileFetcher"
 import { TIER_ZOOM, type CityTier } from "../data/cities"
+import { PACE_START, paceFrame } from "./framePace"
 
 // The globe, in three layers on one orthographic projection (screen pixels):
 //  - the GPU (globeGl.ts): the surface as NASA's Blue Marble shows it, the sun's real day and night, the clouds where a
@@ -60,7 +61,15 @@ const NOTE_PX = 14
 const RING_POINTS = 24
 const RING_TRIG = Array.from({ length: RING_POINTS }, (_, k) => [Math.cos((2 * Math.PI * k) / RING_POINTS), Math.sin((2 * Math.PI * k) / RING_POINTS)])
 /** lightning flickers this often while a storm shows */
-const STORM_MS = 200
+const STORM_MS = 250
+/** lightning is drawn (and the globe redrawn for it) only this close: farther out a flash is too small to see, and the
+ *  globe rests between moves */
+const LIGHTNING_ZOOM = 2.5
+/** where the GPU cannot keep up while the globe moves, it draws at DPR_STEP fewer device pixels per CSS pixel (never under
+ *  one), and a step more again once it can (see framePace) */
+const DPR_STEP = 0.25
+/** the camera counts as moving while it moved this recently */
+const MOVING_MS = 100
 /** device pixels per CSS pixel, at most: past 2 the eye gains little and the shader pays for every pixel */
 const DPR_MAX = 2
 /** the sun is redrawn this often (it moves a quarter of a degree a minute) */
@@ -119,6 +128,9 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const pillsRef = useRef<HTMLDivElement>(null)
+  /** the sound rings round the city playing: HTML, so the compositor animates them without repainting the markers */
+  const wavesRef = useRef<HTMLDivElement>(null)
+  const [dprCap, setDprCap] = useState(DPR_MAX)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [gl, setGl] = useState<GlobeGl | "none" | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -177,8 +189,8 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
   }, [cloudData])
 
   const { w, h } = size
-  // never under a device pixel per CSS pixel (a zoomed-out window), at most DPR_MAX
-  const dpr = typeof window !== "undefined" ? Math.max(1, Math.min(DPR_MAX, window.devicePixelRatio || 1)) : 1
+  // never under a device pixel per CSS pixel (a zoomed-out window), at most DPR_MAX — less where the GPU cannot keep up
+  const dpr = typeof window !== "undefined" ? Math.max(1, Math.min(dprCap, window.devicePixelRatio || 1)) : 1
   const noted = useCallback((c: GlobeCity) => (musicMode && c.music) || c.id === playing, [musicMode, playing])
   const pillW = useMemo(() => new Map(cities.map((c) => [c.id, pillWidth(c.name, c.temp?.text ?? null, noted(c) ? NOTE_PX : 0)])), [cities, noted])
   const chipW = useMemo(() => new Map(cities.flatMap((c) => (c.temp ? [[c.id, chipWidth(c.temp.short)] as const] : []))), [cities])
@@ -206,8 +218,9 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     const cam = controller.camera
     const r = FIT * Math.min(d.w, d.h) * cam.zoom, cx = d.w / 2, cy = d.h / 2
     const still = reducedMotion()
-    const tS = still ? 0 : (performance.now() / 1000) % 100_000
-    d.gl?.draw({ width: Math.round(d.w * d.dpr), height: Math.round(d.h * d.dpr), cx: cx * d.dpr, cy: cy * d.dpr, r: r * d.dpr, view: cam, sun: d.sun, timeS: tS, clouds: d.showClouds, whole: still })
+    const now = performance.now()
+    const tS = still ? 0 : (now / 1000) % 100_000
+    d.gl?.draw({ width: Math.round(d.w * d.dpr), height: Math.round(d.h * d.dpr), cx: cx * d.dpr, cy: cy * d.dpr, r: r * d.dpr, view: cam, sun: d.sun, timeS: tS, clouds: d.showClouds, whole: still, lightning: cam.zoom >= LIGHTNING_ZOOM })
     detailRef.current?.view(cam, { w: d.w * d.dpr, h: d.h * d.dpr, r: r * d.dpr, cx: cx * d.dpr, cy: cy * d.dpr })
     const fb = fallbackRefs.current
     if (fb.land) {
@@ -238,10 +251,13 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     // the markers that keep their place: the ring lying on the ground around each
     const items: Array<{ id: string; x: number; y: number; marker: LabelBox; w: number }> = []
     const shown = new Set<string>()
+    // (cast: assigned in the loop below, which TypeScript does not follow)
+    let wavesAt = null as [number, number] | null
     const m = MARKER_PX + 3
     cands.forEach(({ id, c, x, y, C }, k) => {
       if (!keep[k]) { hideCity(c); return }
       shown.add(id)
+      if (id === d.playing) wavesAt = [x, y]
       c.g.style.display = ""
       c.g.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`)
       // east and north along the ground, in the camera's frame: the ring is drawn in the ground's own plane
@@ -260,6 +276,11 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
       items.push({ id, x, y, w: d.pillW.get(id) ?? 80, marker: [-m, -m, m, m] })
     })
     shownRef.current = shown
+    const wv = wavesRef.current
+    if (wv) {
+      wv.style.display = wavesAt ? "" : "none"
+      if (wavesAt) wv.style.transform = `translate3d(${wavesAt[0].toFixed(1)}px, ${wavesAt[1].toFixed(1)}px, 0)`
+    }
 
     // labels, in the same order: the full pill where it fits, clear of every marker, every other label and the panels,
     // each held where it was while it still fits; then, where it did not, the temperature alone
@@ -351,12 +372,35 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     layout()
   })
   useEffect(() => controller.subscribe(() => layout()), [controller, layout])
+  // the GPU keeping up? While the camera moves, a probe times the animation frames — not the moves, which come at the
+  // pace of the key repeat or the wheel — and steps the pixel ratio coarser where they lag, finer again once they keep up
+  useEffect(() => {
+    let raf = 0, last = 0, movedAt = 0, pace = PACE_START
+    const tick = (t: number) => {
+      raf = 0
+      if (t - movedAt > MOVING_MS || document.hidden) { last = 0; return }
+      if (last) {
+        const cur = data.current.dpr, top = Math.min(DPR_MAX, window.devicePixelRatio || 1)
+        const next = paceFrame(pace, t - last, cur < top)
+        pace = next.pace
+        if (next.step < 0 && cur > 1) setDprCap(Math.max(1, cur - DPR_STEP))
+        else if (next.step > 0) setDprCap(Math.min(top, cur + DPR_STEP))
+      }
+      last = t
+      raf = window.requestAnimationFrame(tick)
+    }
+    const off = controller.subscribe(() => {
+      movedAt = performance.now()
+      if (!raf && data.current.gl) raf = window.requestAnimationFrame(tick)
+    })
+    return () => { off(); if (raf) window.cancelAnimationFrame(raf) }
+  }, [controller])
   // lightning in a storm flickers while it shows
   useEffect(() => {
     if (!showClouds || !stormy || reducedMotion()) return
-    const id = window.setInterval(() => { if (!document.hidden) layout() }, STORM_MS)
+    const id = window.setInterval(() => { if (!document.hidden && controller.camera.zoom >= LIGHTNING_ZOOM) layout() }, STORM_MS)
     return () => window.clearInterval(id)
-  }, [showClouds, stormy, layout])
+  }, [showClouds, stormy, layout, controller])
 
   // the wheel zooms the globe, never the page (a passive React listener could not stop the page scrolling)
   useEffect(() => {
@@ -423,7 +467,6 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
               className={`city${selected === c.id ? " selected" : ""}${night.has(c.id) ? " night" : ""}${musicMode && c.music ? " music" : ""}${playing === c.id ? " playing" : ""}`}>
               <title>{`${c.name}${c.note ? `\n${c.note}` : ""}`}</title>
               {night.has(c.id) && <circle className="citylight" r={MARKER_PX + 7} />}
-              {playing === c.id && [0, 1, 2].map((k) => <circle key={k} className={`wave w${k}`} r={MARKER_PX + 2} />)}
               {selected === c.id && <polygon className="sel" data-px={MARKER_PX + 5} />}
               <polygon className="ring" data-px={MARKER_PX} />
               <circle className="dot" r={1.6} />
@@ -432,6 +475,7 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
           ))}
         </g>
       </svg>
+      <div ref={wavesRef} className="playing-waves" style={{ display: "none" }} aria-hidden="true"><i /><i /><i /></div>
       <div ref={pillsRef} className="globe-pills">
         {cities.map((c) => {
           const temp = c.temp?.text ?? null

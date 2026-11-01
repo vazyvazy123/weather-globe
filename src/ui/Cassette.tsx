@@ -14,6 +14,7 @@ const R_HUB = 14, R_FULL = 40
 /** the tape's speed past the head, in drawing units a second */
 const TAPE_PER_S = 70
 const DEG = 180 / Math.PI
+const REEL_FRAME_MS = 32
 
 interface Props {
   track: Track | null
@@ -67,7 +68,9 @@ export function Cassette({ track, audio, playing, accent }: Props) {
       leftHub.current?.setAttribute("transform", `rotate(${aL.toFixed(2)} ${LX} ${CY})`)
       rightHub.current?.setAttribute("transform", `rotate(${aR.toFixed(2)} ${RX} ${CY})`)
     }
-    const loop = (now: number) => { paint(now); raf = requestAnimationFrame(loop) }
+    // 30 frames a second: the reels turn as smoothly to the eye, at half the repaints
+    let painted = 0
+    const loop = (now: number) => { if (now - painted >= REEL_FRAME_MS) { painted = now; paint(now) } raf = requestAnimationFrame(loop) }
     paint(last)
     if (spin) raf = requestAnimationFrame(loop)
     // paused, the packs still follow a seek

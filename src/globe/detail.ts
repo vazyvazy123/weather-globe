@@ -39,7 +39,7 @@ const AHEAD_PER_MIN = 48
 /** a satellite is used out to this angle from the point below it */
 export const MAX_VIEW_DEG = 72
 /** the clouds' detail is rebuilt at most this often while its tiles come in */
-const REBUILD_MS = 350
+const REBUILD_MS = 500
 /** while an earlier detail of the clouds is on show, a part-built one waits at most this long for the rest */
 const CLOUD_SHOW_WITHIN_MS = 900
 /** the next level is not fetched ahead while this share of the minute's requests is spent */

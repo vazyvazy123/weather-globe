@@ -151,6 +151,7 @@ uniform sampler2D u_land;
 uniform sampler2D u_cmap;
 uniform float u_cloudOn;
 uniform float u_time;    // seconds: the lightning
+uniform float u_lightning; // 1 = lightning is drawn (the view is close enough to see it)
 uniform float u_lod;     // the cloud map's mip level at the disk's centre (texels per device pixel, log 2)
 uniform sampler2D u_photo;   // NASA's Blue Marble, the whole world
 uniform float u_photoOn;     // 0 = no picture yet: the drawn colours
@@ -375,7 +376,9 @@ void main() {
       // fine detail the map is too coarse to hold, zoomed in and only where the cloud is thin (its edges), where the
       // satellite's own is not drawn
       float detail = smoothstep(600.0, 1600.0, u_radius) * (1.0 - min(1.0, sharpC * 4.0)) * (1.0 - visW);
-      float dens = clamp(relief + (vnoise(w * 160.0) - 0.5) * 0.45 * detail * cm.r * (1.0 - cm.r), 0.0, 1.0);
+      float dens = relief;
+      if (detail > 0.0) dens += (vnoise(w * 160.0) - 0.5) * 0.45 * detail * cm.r * (1.0 - cm.r);
+      dens = clamp(dens, 0.0, 1.0);
       float cz = dot(pc, u_sun);
       float dayC = smoothstep(-0.12, 0.15, cz);
       // sunlit tops white; grey where more cloud stands between this point and the sun (the far side of a cloud), and
@@ -405,7 +408,7 @@ void main() {
       // lightning: now and then a soft round glow somewhere inside a cell of the sky — wholly within it, so no cell's
       // edge ever shows — and only where a thunderstorm's cloud is thick
       float flash = 0.0;
-      if (cm.a > 0.01 && dens > 0.45) {
+      if (u_lightning > 0.5 && cm.a > 0.01 && dens > 0.45) {
         vec3 q = w * 90.0, cell = floor(q);
         float tick = mod(floor(u_time * 5.0), 997.0);
         if (hash3(cell + vec3(tick * 1.7, tick * 0.3, tick * 2.9)) > 0.975) {
@@ -439,6 +442,8 @@ export interface GlobeDraw {
   clouds: boolean
   /** bake new clouds whole in this draw (reduced motion: no frames follow), not a strip per frame */
   whole?: boolean
+  /** draw lightning (the view is close enough to see it) */
+  lightning?: boolean
 }
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader | null {
@@ -559,7 +564,7 @@ export class GlobeGl {
     private readonly gl: WebGL2RenderingContext,
     private readonly prog: WebGLProgram,
     private readonly bake: WebGLProgram,
-    private readonly loc: Record<"center" | "radius" | "view" | "sun" | "land" | "cmap" | "cmapPx" | "cloudOn" | "time" | "lod" | "photo" | "photoOn"
+    private readonly loc: Record<"center" | "radius" | "view" | "sun" | "land" | "cmap" | "cmapPx" | "cloudOn" | "time" | "lightning" | "lod" | "photo" | "photoOn"
       | "atlas" | "page" | "atlasOn" | "nowS" | "bathy" | "bathyOn" | "dCloud" | "dCloudBox" | "dCloudPx" | "dCloudOn" | "satC" | "satCLat" | "satCOn", Uniform>,
     private readonly bakeLoc: Record<"field" | "fieldValidity" | "sat" | "satOn" | "satLat" | "time" | "size", Uniform>,
     private readonly landTex: WebGLTexture,
@@ -608,7 +613,7 @@ export class GlobeGl {
     const at = (p: WebGLProgram) => (n: string) => gl.getUniformLocation(p, n)
     const u = at(prog), b = at(bake)
     return new GlobeGl(gl, prog, bake,
-      { center: u("u_center"), radius: u("u_radius"), view: u("u_view"), sun: u("u_sun"), land: u("u_land"), cmap: u("u_cmap"), cmapPx: u("u_cmapPx"), cloudOn: u("u_cloudOn"), time: u("u_time"), lod: u("u_lod"),
+      { center: u("u_center"), radius: u("u_radius"), view: u("u_view"), sun: u("u_sun"), land: u("u_land"), cmap: u("u_cmap"), cmapPx: u("u_cmapPx"), cloudOn: u("u_cloudOn"), time: u("u_time"), lightning: u("u_lightning"), lod: u("u_lod"),
         photo: u("u_photo"), photoOn: u("u_photoOn"), atlas: u("u_atlas"), page: u("u_page"), atlasOn: u("u_atlasOn"), nowS: u("u_nowS"), bathy: u("u_bathy"), bathyOn: u("u_bathyOn"),
         dCloud: u("u_dCloud"), dCloudBox: u("u_dCloudBox"), dCloudPx: u("u_dCloudPx"), dCloudOn: u("u_dCloudOn"),
         satC: u("u_satC"), satCLat: u("u_satCLat"), satCOn: u("u_satCOn") },
@@ -824,6 +829,7 @@ export class GlobeGl {
     gl.uniform3f(this.loc.sun, ...sunInView(o.sun, o.view))
     gl.uniform1f(this.loc.cloudOn, cloudsOn && this.baked ? 1 : 0)
     gl.uniform1f(this.loc.time, o.timeS)
+    gl.uniform1f(this.loc.lightning, o.lightning ? 1 : 0)
     gl.uniform1f(this.loc.lod, Math.log2(this.mapW / (2 * Math.PI * Math.max(1, o.r))))
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.landTex)
