@@ -7,7 +7,8 @@ import { CITY_EVERY_MS, GRID_EVERY_MS, RETRY_MS, fetchCities, fetchGrid, type Ci
 // The cities' weather and the cloud grid, each read when its stored copy is older than its interval, checked once a
 // minute while the page is visible. A failure keeps what is held and waits RETRY_MS before the next try.
 
-const CITY_KEY = "weather-globe:cities:v1"
+// v2: the longer city list (a v1 copy lacks most cities, so it is read again at once)
+const CITY_KEY = "weather-globe:cities:v2"
 const GRID_KEY = "weather-globe:grid:v1"
 const TICK_MS = 60_000
 

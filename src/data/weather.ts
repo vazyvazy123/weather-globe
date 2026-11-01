@@ -1,6 +1,6 @@
 // The weather now from Open-Meteo (free for non-commercial use, CC BY 4.0; it answers cross-origin requests):
-//  - every city's current temperature, cloud cover and WMO weather code, in one multi-location request at most every
-//    CITY_EVERY_MS;
+//  - every city's current temperature, cloud cover and WMO weather code, in a few multi-location requests (CITY_BATCH
+//    cities each, so no address grows too long) at most every CITY_EVERY_MS;
 //  - the world's clouds now on a coarse grid (10° × 20°, 252 points) in one request at most every GRID_EVERY_MS, for the
 //    globe's cloud layer where the satellite has no picture, and its low cloud.
 // Open-Meteo counts each location as a call, so both answers are kept in localStorage: a reload within the interval asks
@@ -9,8 +9,14 @@ import type { CloudGrid } from "../globe/cloudField"
 import { skyFromWmo, type Sky } from "../geo/sky"
 import type { City } from "./cities"
 
+/** what a weather read needs of a city */
+type CityPoint = Pick<City, "id" | "lat" | "lon">
+
 export const OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-export const CITY_EVERY_MS = 15 * 60_000
+/** Open-Meteo counts each city as a call: ~230 cities hourly plus the grid every 3 h is ~7,500 calls for a page left
+ *  open all day, inside the free 10,000 a day; a first visit with nothing stored costs ~480 (the limit is 600 a minute) */
+export const CITY_EVERY_MS = 60 * 60_000
+export const CITY_BATCH = 100
 export const GRID_EVERY_MS = 3 * 3600_000
 /** a failed read waits this long before the next try */
 export const RETRY_MS = 10 * 60_000
@@ -57,7 +63,7 @@ const record = (v: unknown): Record<string, unknown> | null => (v != null && typ
 const answers = (body: unknown): unknown[] => (Array.isArray(body) ? body : body != null ? [body] : [])
 
 /** A city answer's `current` block in the cities' order. */
-export function parseCities(body: unknown, cities: readonly City[]): CityWeather[] {
+export function parseCities(body: unknown, cities: readonly CityPoint[]): CityWeather[] {
   const list = answers(body)
   return cities.map((c, i) => {
     const a = record(list[i]), cur = record(a?.current)
@@ -99,8 +105,16 @@ async function getJson(url: string): Promise<unknown> {
   return res.json() as Promise<unknown>
 }
 
-export async function fetchCities(cities: readonly City[]): Promise<CityWeather[]> {
-  return parseCities(await getJson(currentUrl(cities, CITY_FIELDS, true)), cities)
+/** `list` cut into runs of at most `size`, in order. */
+export function batches<T>(list: readonly T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size))
+  return out
+}
+
+export async function fetchCities(cities: readonly CityPoint[]): Promise<CityWeather[]> {
+  const parts = await Promise.all(batches(cities, CITY_BATCH).map(async (part) => parseCities(await getJson(currentUrl(part, CITY_FIELDS, true)), part)))
+  return parts.flat()
 }
 
 export async function fetchGrid(nowMs: number): Promise<CloudGrid> {

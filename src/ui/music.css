@@ -1,0 +1,184 @@
+/* The music: the toolbar chip, the music cities on the globe, the player (dock, cassette, folded record) and a city's
+   song list. The song's own two colours (--s1, --s2, set on the dock) tint the player. */
+
+.chip-music.on { border-color: transparent; color: #fff; background: linear-gradient(135deg, #e4572e, #f4b942); box-shadow: 0 0 18px rgba(244, 185, 66, 0.35); }
+
+/* ---- the globe: cities appear softly, compact chips, music cities, the song playing ---- */
+.pill-city { animation: fade-in 260ms ease-out; }
+.city { animation: fade-in 320ms ease-out; }
+@keyframes fade-in { from { opacity: 0; } }
+
+.pill-city .pc-chip { display: none; }
+.pill-city.compact { gap: 0; padding: 0 6px; justify-content: center; border-color: color-mix(in srgb, var(--tc, #9aa0c8) 45%, transparent);
+  background: color-mix(in srgb, var(--tc, #9aa0c8) 18%, rgba(8, 11, 32, 0.88)); }
+.pill-city.compact .pc-name, .pill-city.compact .pc-temp, .pill-city.compact .pc-note { display: none; }
+.pill-city.compact .pc-chip { display: inline; font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--tc); }
+
+.pc-note { color: #f4b942; font-size: 12px; line-height: 1; margin-right: -2px; }
+.pill-city.noted { border-color: rgba(244, 185, 66, 0.55); box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4), 0 0 12px rgba(244, 185, 66, 0.18); }
+.pill-city.playing { border-color: #f4b942; color: var(--ink-1); background: linear-gradient(90deg, rgba(228, 87, 46, 0.32), rgba(8, 11, 32, 0.9) 70%); }
+.music-mode .pill-city:not(.noted):not(.selected) { opacity: 0.55; }
+.music-mode .pill-city:not(.noted):not(.selected):hover { opacity: 1; }
+
+.pc-eq { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 10px; margin-right: 0; }
+.pc-eq i { width: 2px; height: 40%; border-radius: 1px; background: #f4b942; animation: eq 780ms ease-in-out infinite alternate; }
+.pc-eq i:nth-child(2) { animation-delay: -260ms; }
+.pc-eq i:nth-child(3) { animation-delay: -520ms; }
+
+.city.music .ring { stroke: #f4b942; fill: rgba(244, 185, 66, 0.28); }
+.city.music .dot { fill: #ffe2a3; }
+.city.playing .ring { stroke: #ff8a5c; fill: rgba(255, 138, 92, 0.35); }
+.city .wave { fill: none; stroke: #f4b942; stroke-width: 1.4px; vector-effect: non-scaling-stroke; transform-box: fill-box; transform-origin: center;
+  animation: wave 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite; pointer-events: none; }
+.city .wave.w1 { animation-delay: 0.8s; }
+.city .wave.w2 { animation-delay: 1.6s; }
+@keyframes wave { from { transform: scale(1); opacity: 0.9; } to { transform: scale(5); opacity: 0; } }
+
+/* ---- the player ---- */
+.dock { position: absolute; left: 16px; bottom: 72px; z-index: 3; width: 360px; max-width: calc(100% - 32px); padding: 14px 16px 12px;
+  /* clip, not hidden: a hidden overflow can still be scrolled (focus moving inside would shift the whole card) */
+  border-radius: 22px; overflow: hidden; overflow: clip; color: var(--ink-1); isolation: isolate;
+  background: linear-gradient(160deg, rgba(30, 32, 66, 0.8), rgba(8, 10, 28, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px) saturate(1.3); -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  animation: dock-in 460ms cubic-bezier(0.2, 0.9, 0.3, 1.15); }
+@keyframes dock-in { from { opacity: 0; transform: translateY(24px) scale(0.97); } }
+.dock > * { position: relative; z-index: 1; }
+.dock button:focus-visible, .dock a:focus-visible, .dock input:focus-visible, .songs button:focus-visible { outline: 2px solid var(--s1, var(--accent)); outline-offset: 2px; }
+
+.dock .dock-glow { position: absolute; inset: 0; z-index: 0; overflow: hidden; overflow: clip; pointer-events: none; }
+.dock-glow-img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.6); filter: blur(52px) saturate(1.7); opacity: 0.5; animation: fade-in 900ms ease-out; }
+.dock-glow::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 0%, transparent 0%, rgba(8, 10, 28, 0.55) 70%); }
+
+.dock-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dock-eyebrow { display: inline-flex; align-items: center; gap: 7px; min-width: 0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+.dock-eyebrow .dot { color: var(--ink-4); }
+.dock-place { padding: 0; letter-spacing: inherit; text-transform: inherit; font-weight: inherit; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+.dock-place:hover { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+.dock-actions { display: inline-flex; gap: 2px; margin-right: -6px; }
+
+.eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+.eq i { width: 2.5px; height: 30%; border-radius: 1px; background: var(--s1, var(--accent)); animation: eq 820ms ease-in-out infinite alternate; animation-play-state: paused; }
+.eq.on i { animation-play-state: running; }
+.eq i:nth-child(2) { animation-delay: -300ms; background: var(--s2, var(--accent)); }
+.eq i:nth-child(3) { animation-delay: -600ms; }
+.eq i:nth-child(4) { animation-delay: -150ms; background: var(--s2, var(--accent)); }
+@keyframes eq { from { height: 20%; } to { height: 100%; } }
+
+.dock-now { display: grid; grid-template-columns: 84px 1fr; gap: 14px; align-items: center; margin-top: 12px; animation: now-in 420ms ease-out; }
+.dock-now.empty { grid-template-columns: 1fr; }
+@keyframes now-in { from { opacity: 0; transform: translateX(-10px); } }
+.dock-cover { display: block; width: 84px; height: 84px; border-radius: 12px; object-fit: cover;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.1); }
+.dock-cover.pic-none, .song-art.pic-none, .disc-art.pic-none { background: linear-gradient(135deg, var(--s1, #e4572e), var(--s2, #f4b942)); }
+.dock-meta { min-width: 0; }
+.dock-title { margin: 0; font-size: 18px; font-weight: 750; line-height: 1.2; letter-spacing: -0.01em; color: #fff;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dock-artist { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 13px; color: var(--ink-2); }
+.dock-avatar { flex: none; width: 24px; height: 24px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.75), 0 2px 8px rgba(0, 0, 0, 0.5); }
+.dock-avatar.pic-none { display: none; }
+.dock-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 0; }
+.tag { padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; color: var(--ink-2); background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.1); }
+.tag.weather { font-family: var(--mono); font-size: 10px; color: #ffe2a3; }
+.dock-hint { margin: 6px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
+.dock-world { display: inline-flex; align-items: center; gap: 8px; height: 36px; margin-top: 12px; padding: 0 16px; border-radius: 18px; font-size: 13px; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, var(--s1), var(--s2)); box-shadow: 0 8px 22px rgba(228, 87, 46, 0.35); transition: transform 160ms; }
+.dock-world:hover { transform: translateY(-1px); }
+.dock-world .ic { width: 16px; height: 16px; }
+
+.dock-deck { display: block; max-width: 290px; margin: 14px auto 6px; filter: drop-shadow(0 16px 22px rgba(0, 0, 0, 0.55)); }
+.dock-deck .cassette { display: block; width: 100%; height: auto; animation: deck-in 560ms cubic-bezier(0.2, 0.9, 0.3, 1.1); }
+@keyframes deck-in { from { opacity: 0; transform: translateY(26px) rotate(-2deg); } }
+
+.cassette .cs-edge { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; }
+.cassette .cs-title { font-family: "Segoe Print", "Bradley Hand", "Marker Felt", "Comic Sans MS", cursive; font-size: 17px; font-weight: 700; fill: #1d2440; }
+.cassette .cs-artist { font-family: var(--sans); font-size: 8.5px; font-weight: 700; letter-spacing: 0.16em; fill: #5b5f7a; }
+.cassette .cs-rule { stroke: rgba(29, 36, 64, 0.22); stroke-width: 1; }
+.cassette .cs-side { fill: none; stroke: #1d2440; stroke-width: 1.2; }
+.cassette .cs-side-a { font-family: var(--sans); font-size: 11px; font-weight: 800; fill: #1d2440; }
+.cassette .cs-model { font-family: var(--sans); font-size: 6.5px; font-weight: 700; letter-spacing: 0.22em; fill: rgba(255, 255, 255, 0.85); }
+.cassette .cs-window-rim { stroke: rgba(255, 255, 255, 0.22); stroke-width: 1.2; }
+.cassette .cs-hub { fill: #ece8df; stroke: rgba(0, 0, 0, 0.35); stroke-width: 0.8; }
+.cassette .cs-hub-hole { fill: #171926; }
+.cassette .cs-tooth { fill: #ece8df; }
+.cassette .cs-hub-mark { fill: #b9b2a2; }
+.cassette .cs-tick { stroke: rgba(255, 255, 255, 0.3); stroke-width: 1; }
+.cassette .cs-head { fill: rgba(6, 7, 16, 0.5); stroke: rgba(255, 255, 255, 0.07); }
+.cassette .cs-tape-run { stroke: #4a2c1d; stroke-width: 2.4; stroke-linecap: round; }
+.cassette .cs-hole { fill: #06070d; }
+.cassette .cs-screw circle { fill: #8d91a8; stroke: #23263a; stroke-width: 0.8; }
+.cassette .cs-screw path { stroke: #23263a; stroke-width: 1; }
+
+.dock-time { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 8px; margin-top: 4px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+.dock-time span:last-child { text-align: right; }
+.dock-time input { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; margin: 0; border-radius: 2px; cursor: pointer;
+  background: linear-gradient(90deg, var(--s1), var(--s2)) 0 / var(--p, 0%) 100% no-repeat, rgba(255, 255, 255, 0.14); }
+.dock-time input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15), 0 2px 6px rgba(0, 0, 0, 0.5); }
+.dock-time input::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15), 0 2px 6px rgba(0, 0, 0, 0.5); }
+
+.dock-controls { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+.dock-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: var(--ink-3); transition: color 160ms, background-color 160ms; }
+.dock-icon:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.dock-icon.on { color: #fff; background: color-mix(in srgb, var(--s1) 35%, transparent); }
+.dock-icon:disabled { opacity: 0.35; cursor: default; }
+.dock-icon.big { width: 40px; height: 40px; color: var(--ink-2); }
+.dock .ic, .songs .ic { width: 18px; height: 18px; fill: currentColor; }
+.dock-icon.big .ic { width: 22px; height: 22px; }
+.dock-play { display: inline-grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; color: #fff;
+  background: linear-gradient(135deg, var(--s1), var(--s2));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--s1) 55%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35); transition: transform 140ms; }
+.dock-play:hover { transform: scale(1.05); }
+.dock-play:active { transform: scale(0.96); }
+.dock-play .ic { width: 26px; height: 26px; }
+
+.dock-note { margin: 10px 0 0; padding: 7px 10px; border-radius: 9px; font-size: 11.5px; color: var(--ink-2); background: rgba(255, 255, 255, 0.07); }
+.dock-note.warn { color: var(--warn); }
+.dock-credit { margin: 8px 0 0; font-size: 10px; text-align: center; color: var(--ink-4); }
+.dock-credit a { color: var(--ink-3); }
+
+/* folded: a slim bar, the cover turning like a record */
+.dock.folded { display: flex; align-items: center; gap: 12px; width: 330px; padding: 10px 10px 10px 12px; border-radius: 20px; }
+.disc { position: relative; flex: none; width: 46px; height: 46px; border-radius: 50%; overflow: hidden; overflow: clip;
+  background: repeating-radial-gradient(circle, #0c0d14 0 1px, #1d1f2c 1px 3px); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  animation: spin 3.2s linear infinite; animation-play-state: paused; }
+.disc.on { animation-play-state: running; }
+.disc-art { position: absolute; inset: 9px; width: calc(100% - 18px); height: calc(100% - 18px); border-radius: 50%; object-fit: cover; }
+.disc::after { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #0b0c14; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.dock-mini-meta { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.dock-mini-meta b, .dock-mini-meta span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-mini-meta b { font-size: 13.5px; color: #fff; }
+.dock-mini-meta span { font-size: 11.5px; color: var(--ink-3); }
+.dock.folded .dock-play { width: 42px; height: 42px; }
+.dock.folded .dock-play .ic { width: 20px; height: 20px; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ---- a city's songs, in its panel (the list scrolls, so the panel's close button stays put) ---- */
+.panel .country { margin-top: -2px; text-transform: uppercase; letter-spacing: 0.12em; font-size: 10.5px; }
+.songs { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.songs h3 { margin: 0 0 6px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #f4b942; }
+.songs ul { max-height: min(36vh, 240px); margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+.songs li + li { margin-top: 2px; }
+.song { display: grid; grid-template-columns: 36px 1fr 18px; align-items: center; gap: 10px; width: 100%; padding: 5px 6px; border-radius: 10px; text-align: left; transition: background-color 140ms; }
+.song:hover { background: rgba(255, 255, 255, 0.06); }
+.song.on { background: rgba(244, 185, 66, 0.12); }
+.song-art { display: block; width: 36px; height: 36px; border-radius: 7px; object-fit: cover; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); }
+.song-meta { display: flex; flex-direction: column; min-width: 0; }
+.song-meta b, .song-meta span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.song-meta b { font-size: 12.5px; color: var(--ink-1); }
+.song-meta span { font-size: 11px; color: var(--ink-3); }
+.song .ic { width: 16px; height: 16px; color: var(--ink-3); }
+.song .eq i { background: #f4b942; }
+
+@media (max-height: 760px) { .dock-deck { max-width: 230px; margin-top: 10px; } }
+@media (max-height: 640px) { .dock-deck { display: none; } }
+@media (max-width: 640px) {
+  .dock { left: 8px; right: 8px; bottom: 70px; width: auto; max-width: none; padding: 12px 12px 10px; }
+  .dock.folded { width: auto; }
+  .dock-deck { max-width: 210px; }
+  .dock-now { grid-template-columns: 64px 1fr; }
+  .dock-cover { width: 64px; height: 64px; }
+}

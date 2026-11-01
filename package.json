@@ -12,7 +12,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "music": "node scripts/resolve-music.mjs"
   },
   "dependencies": {
     "react": "18.3.1",

@@ -25,9 +25,14 @@ export interface LabelItem {
 
 /** The width of a pill, a little generous so the text always fits: the city's name (12 px semibold), then the
  *  temperature chip (10 px mono). */
-export function pillWidth(name: string, temp: string | null): number {
+export function pillWidth(name: string, temp: string | null, extraPx = 0): number {
   const chip = (s: string | null) => (s ? 5 + s.length * 6.4 + 6 : 0)
-  return Math.round(20 + name.length * 7.3 + chip(temp))
+  return Math.round(20 + name.length * 7.3 + chip(temp) + extraPx)
+}
+
+/** The width of a city's compact label, its temperature alone (10 px mono), for where the full pill has no room. */
+export function chipWidth(temp: string): number {
+  return Math.round(14 + temp.length * 6.4)
 }
 
 /** The pill's box on a side, relative to the ground point. */

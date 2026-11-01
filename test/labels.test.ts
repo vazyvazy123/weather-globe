@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { pillBox, pillWidth, placeLabels, type LabelItem } from "../src/globe/labels"
+import { chipWidth, pillBox, pillWidth, placeLabels, type LabelItem } from "../src/globe/labels"
 
 const item = (x: number, y: number, w = 60): LabelItem => ({ x, y, w, marker: [-5, -5, 5, 5] })
 
@@ -27,5 +27,18 @@ describe("placeLabels", () => {
     expect(b[0]).toBeGreaterThan(5)
     expect(b[2] - b[0]).toBe(50)
     expect(pillWidth("Tokyo", "20°C")).toBeGreaterThan(pillWidth("Tokyo", null))
+    expect(pillWidth("Tokyo", "20°C", 14)).toBe(pillWidth("Tokyo", "20°C") + 14)
+  })
+
+  test("a compact chip is much narrower than the full pill", () => {
+    expect(chipWidth("20°")).toBeLessThan(pillWidth("Tokyo", "20°C") / 2)
+    expect(chipWidth("-12°")).toBeGreaterThan(chipWidth("2°"))
+  })
+
+  test("a compact chip fits where the full pill is blocked", () => {
+    // something already placed just beyond a chip on the right, and to the left and below: room for a chip, not for the pill
+    const blocked: Array<[number, number, number, number]> = [[150, 80, 200, 120], [0, 80, 60, 120], [80, 112, 120, 140]]
+    expect(placeLabels([item(100, 100, 120)], blocked)).toEqual([null])
+    expect(placeLabels([item(100, 100, chipWidth("20°"))], blocked)).toEqual(["right"])
   })
 })
