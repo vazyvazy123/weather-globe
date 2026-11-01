@@ -14,12 +14,16 @@ import { DetailLoader, type DetailStatus } from "../globe/detail"
 import type { TileFetcher } from "../data/tileFetcher"
 import { TIER_ZOOM, type CityTier } from "../data/cities"
 import { PACE_START, paceFrame } from "./framePace"
+import { WindView } from "../globe/windView"
+import type { WindFrame } from "../globe/windField"
 
 // The globe, in three layers on one orthographic projection (screen pixels):
 //  - the GPU (globeGl.ts): the surface as NASA's Blue Marble shows it, the sun's real day and night, the clouds where a
 //    satellite saw them (the weather model's beyond its image), the atmosphere — and, once the view stands still zoomed
 //    in, the sharp detail of the part in view (detail.ts: the surface's tiles, the clouds sharpened by the infrared of
 //    the satellite overhead);
+//  - the wind (windView.ts): particles drifting with the wind near the ground, on a canvas of their own over the GPU's,
+//    so their motion never redraws the globe;
 //  - SVG: each city's marker, a ring lying ON the surface (it tilts and narrows with the globe), with a silver glow where
 //    it is night;
 //  - label pills (HTML): name and temperature on one cold → hot scale. The labels keep clear of the markers, of each
@@ -100,6 +104,8 @@ interface Props {
   playing?: string | null
   /** boxes the labels keep clear of (the panels over the globe), in CSS pixels */
   avoid?: readonly LabelBox[]
+  /** the wind to draw over the globe (windField.ts); null = none */
+  wind?: WindFrame | null
 }
 
 type Vec3 = [number, number, number]
@@ -123,13 +129,16 @@ const abs = (b: LabelBox, x: number, y: number): LabelBox => [x + b[0], y + b[1]
 const hideCity = (c: CityEls) => { c.g.style.display = "none"; if (c.pill) c.pill.style.display = "none" }
 
 export const Globe = memo(function Globe({ cities, clouds, satellite, selected, onCity, controller, showClouds, tiles, onGpu, onDetail, reserveBottom = 0,
-  musicMode = false, playing = null, avoid = NO_BOXES }: Props) {
+  musicMode = false, playing = null, avoid = NO_BOXES, wind = null }: Props) {
   const stageRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const pillsRef = useRef<HTMLDivElement>(null)
   /** the sound rings round the city playing: HTML, so the compositor animates them without repainting the markers */
   const wavesRef = useRef<HTMLDivElement>(null)
+  /** the wind's own canvas over the globe's, and what draws on it (made the first time there is wind) */
+  const windRef = useRef<HTMLCanvasElement>(null)
+  const windView = useRef<WindView | null>(null)
   const [dprCap, setDprCap] = useState(DPR_MAX)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [gl, setGl] = useState<GlobeGl | "none" | null>(null)
@@ -222,6 +231,7 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     const tS = still ? 0 : (now / 1000) % 100_000
     d.gl?.draw({ width: Math.round(d.w * d.dpr), height: Math.round(d.h * d.dpr), cx: cx * d.dpr, cy: cy * d.dpr, r: r * d.dpr, view: cam, sun: d.sun, timeS: tS, clouds: d.showClouds, whole: still, lightning: cam.zoom >= LIGHTNING_ZOOM })
     detailRef.current?.view(cam, { w: d.w * d.dpr, h: d.h * d.dpr, r: r * d.dpr, cx: cx * d.dpr, cy: cy * d.dpr })
+    windView.current?.view(cam, { w: d.w, h: d.h, cx, cy, r, dpr: d.dpr })
     const fb = fallbackRefs.current
     if (fb.land) {
       fb.sphere?.setAttribute("cx", String(cx)); fb.sphere?.setAttribute("cy", String(cy)); fb.sphere?.setAttribute("r", r.toFixed(1))
@@ -401,6 +411,13 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     const id = window.setInterval(() => { if (!document.hidden && controller.camera.zoom >= LIGHTNING_ZOOM) layout() }, STORM_MS)
     return () => window.clearInterval(id)
   }, [showClouds, stormy, layout, controller])
+  // the wind, on its own canvas (made the first time there is wind to draw)
+  useEffect(() => {
+    if (wind && !windView.current && windRef.current && gl && gl !== "none") windView.current = WindView.create(windRef.current)
+    windView.current?.setFrame(wind)
+    if (wind) layout()
+  }, [wind, gl, layout])
+  useEffect(() => () => { windView.current?.dispose(); windView.current = null }, [])
 
   // the wheel zooms the globe, never the page (a passive React listener could not stop the page scrolling)
   useEffect(() => {
@@ -446,6 +463,8 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
       aria-label="Globe — drag or use the arrow keys to turn it, scroll or + / − to zoom; Tab moves between the labelled cities"
       onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onKeyDown={onKey}>
       <canvas ref={canvasRef} className="globe-gl" width={Math.max(1, Math.round(w * dpr))} height={Math.max(1, Math.round(h * dpr))} style={{ width: w, height: h }} />
+      <canvas ref={windRef} className="globe-wind" width={Math.max(1, Math.round(w * dpr))} height={Math.max(1, Math.round(h * dpr))}
+        style={{ width: w, height: h, display: wind ? undefined : "none" }} aria-hidden="true" />
       <svg ref={svgRef} className="globe-svg" width={w} height={h} viewBox={`0 0 ${w || 1} ${h || 1}`}>
         <defs>
           <radialGradient id="g-citylight">

@@ -6,6 +6,8 @@ import { useBox } from "./useBox"
 import { CITIES, type City } from "../data/cities"
 import { countryName, MUSIC_CITIES, TRACKS, tracksForCity, WORLD_ORDER } from "../data/music"
 import { useWeather } from "../data/useWeather"
+import { useWind, type WindState } from "../data/useWind"
+import { WIND_PARTS } from "../data/wind"
 import { satFieldOf, useSatellite, type SatState } from "../data/useSatellite"
 import { TileFetcher } from "../data/tileFetcher"
 import type { CityWeather } from "../data/weather"
@@ -16,14 +18,19 @@ import type { LabelBox } from "../globe/labels"
 import { CLOUD_SOURCES } from "../geo/tiles"
 import { skyLabel } from "../geo/sky"
 import { cToF } from "../globe/tempColor"
+import { windAt } from "../globe/windField"
+import { WindLegend } from "./WindLegend"
 
-// The page: the globe filling the window, a toolbar (regions, the world tour, the music, clouds, units, zoom), the
+// The page: the globe filling the window, a toolbar (regions, the world tour, the music, clouds, wind, units, zoom), the
 // selected city's panel (with its country's songs), the music player, and a caption saying what is drawn and where it
 // comes from. With the music on, a city's click plays its song, and each new song flies the globe to its city.
 
 type Unit = "C" | "F"
 const START: GlobeCamera = { lon: -30, lat: 25, zoom: 1 }
 const UNIT_KEY = "weather-globe:unit"
+const WIND_KEY = "weather-globe:wind-on"
+/** the wind shown is the forecast's for the present, taken afresh this often */
+const WIND_FRAME_MS = 5 * 60_000
 const CAPTION_PX = 64
 /** a city clicked or played comes at least this close */
 const CITY_ZOOM = 2.4
@@ -33,6 +40,7 @@ const PANEL_MARGIN_PX = 6
 const CITY_BY_ID = new Map(CITIES.map((c) => [c.id, c]))
 
 const readUnit = (): Unit => { try { return globalThis.localStorage?.getItem(UNIT_KEY) === "F" ? "F" : "C" } catch { return "C" } }
+const readWind = (): boolean => { try { return globalThis.localStorage?.getItem(WIND_KEY) === "1" } catch { return false } }
 const degrees = (c: number, unit: Unit): number => Math.round(unit === "F" ? cToF(c) : c)
 const tempText = (c: number, unit: Unit): string => `${degrees(c, unit)}°${unit}`
 const utcTime = (ms: number): string => new Date(ms).toISOString().slice(11, 16) + " UTC"
@@ -54,6 +62,15 @@ function satCaption(s: SatState): string {
     case "ready": return `Clouds: NOAA GMGSI infrared mosaic, ${utcTime(s.sat.timeMs)}`
     case "failed": return s.sat ? `Clouds: NOAA GMGSI infrared, ${utcTime(s.sat.timeMs)} (newer image unavailable: ${s.why})` : `Clouds: weather model (satellite image unavailable: ${s.why})`
   }
+}
+
+function windCaption(w: WindState, shown: boolean, nowMs: number): string {
+  if (!shown) {
+    if (w.error && w.reading == null) return `Wind: forecast unavailable (${w.error})`
+    return w.reading != null ? `Wind: reading the forecast (${w.reading} of ${WIND_PARTS})…` : "Wind: reading the forecast…"
+  }
+  const more = w.reading != null ? ` · filling in (${w.reading} of ${WIND_PARTS})` : ""
+  return `Wind near the ground: Open-Meteo forecast for ${utcTime(nowMs)}${more}`
 }
 
 function detailCaption(d: DetailStatus | null): string | null {
@@ -79,6 +96,7 @@ export function App() {
   useEffect(() => () => controller.dispose(), [controller])
   const tiles = useMemo(() => new TileFetcher(), [])
   const [showClouds, setShowClouds] = useState(true)
+  const [showWind, setShowWind] = useState(readWind)
   const [unit, setUnit] = useState<Unit>(readUnit)
   const [selected, setSelected] = useState<string | null>(null)
   const [gpu, setGpu] = useState<boolean | null>(null)
@@ -93,6 +111,11 @@ export function App() {
   const weather = useWeather()
   const sat = useSatellite(showClouds)
   const satellite = satFieldOf(sat)
+  // the wind is read and drawn only on a GPU known to draw it (never for the plain outline globe)
+  const windOn = showWind && gpu === true
+  const wind = useWind(windOn)
+  const windMoment = Math.floor(now / WIND_FRAME_MS) * WIND_FRAME_MS
+  const windFrame = useMemo(() => (windOn && wind.grid ? windAt(wind.grid, windMoment / 1000) : null), [windOn, wind.grid, windMoment])
 
   const byId = useMemo(() => new Map((weather.cities ?? []).map((w) => [w.id, w])), [weather.cities])
   const cities: GlobeCity[] = useMemo(() => CITIES.map((c): GlobeCity => {
@@ -106,6 +129,10 @@ export function App() {
     const next = u === "C" ? "F" : "C"
     try { globalThis.localStorage?.setItem(UNIT_KEY, next) } catch { /* the choice lasts this visit only */ }
     return next
+  })
+  const switchWind = () => setShowWind((on) => {
+    try { globalThis.localStorage?.setItem(WIND_KEY, on ? "0" : "1") } catch { /* the choice lasts this visit only */ }
+    return !on
   })
   const flyToCity = useCallback((id: string, zoom: number) => {
     const c = CITY_BY_ID.get(id)
@@ -161,6 +188,8 @@ export function App() {
           <button ref={musicChip} type="button" className={`chip chip-music${musicMode ? " on" : ""}`} aria-pressed={musicMode} onClick={() => setMusicMode((v) => !v)}
             title="Songs from around the world">♪ Music</button>
           <button type="button" className={`chip${showClouds ? " on" : ""}`} aria-pressed={showClouds} onClick={() => setShowClouds((v) => !v)} disabled={gpu === false}>Clouds</button>
+          <button type="button" className={`chip${showWind ? " on" : ""}`} aria-pressed={showWind} onClick={switchWind} disabled={gpu === false}
+            title="The wind near the ground, from the weather forecast">Wind</button>
           <button type="button" className="chip" onClick={switchUnit} aria-label={`Show temperatures in °${unit === "C" ? "F" : "C"}`}>°{unit}</button>
           <button type="button" className="chip" aria-label="Zoom in" onClick={() => controller.set(zoomed(controller.camera, 1.5))}>+</button>
           <button type="button" className="chip" aria-label="Zoom out" onClick={() => controller.set(zoomed(controller.camera, 1 / 1.5))}>−</button>
@@ -169,7 +198,7 @@ export function App() {
       <main className={`stage${musicMode ? " music-mode" : ""}`}>
         <Globe cities={cities} clouds={weather.grid} satellite={showClouds ? satellite : null} selected={selected} onCity={onCity}
           controller={controller} showClouds={showClouds && gpu !== false} tiles={tiles} onGpu={setGpu} onDetail={setDetail} reserveBottom={CAPTION_PX}
-          musicMode={musicMode} playing={trackCity} avoid={avoid} />
+          musicMode={musicMode} playing={trackCity} avoid={avoid} wind={windFrame} />
         {city && (
           <aside ref={panelRef} className="panel" aria-label={`${city.name} weather`}>
             <button type="button" className="close" aria-label="Close" onClick={() => setSelected(null)}>×</button>
@@ -186,6 +215,7 @@ export function App() {
         <footer className="caption">
           {gpu === false && <div>WebGL2 is unavailable: showing the plain outline globe.</div>}
           {gpu !== false && showClouds && <div>{satCaption(sat)}</div>}
+          {windOn && <div className="wind-line">{windCaption(wind, windFrame != null, now)}{windFrame && <WindLegend unit={unit} />}</div>}
           {detailLine && <div>{detailLine}</div>}
           {weather.error && <div className="warn">Weather: {weather.error}</div>}
           <div className="credit">

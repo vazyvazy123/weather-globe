@@ -8,6 +8,7 @@
 import type { CloudGrid } from "../globe/cloudField"
 import { skyFromWmo, type Sky } from "../geo/sky"
 import type { City } from "./cities"
+import { meteoBudget } from "./meteoBudget"
 
 /** what a weather read needs of a city */
 type CityPoint = Pick<City, "id" | "lat" | "lon">
@@ -113,10 +114,15 @@ export function batches<T>(list: readonly T[], size: number): T[][] {
 }
 
 export async function fetchCities(cities: readonly CityPoint[]): Promise<CityWeather[]> {
-  const parts = await Promise.all(batches(cities, CITY_BATCH).map(async (part) => parseCities(await getJson(currentUrl(part, CITY_FIELDS, true)), part)))
+  const parts = await Promise.all(batches(cities, CITY_BATCH).map(async (part) => {
+    meteoBudget.spend(part.length)
+    return parseCities(await getJson(currentUrl(part, CITY_FIELDS, true)), part)
+  }))
   return parts.flat()
 }
 
 export async function fetchGrid(nowMs: number): Promise<CloudGrid> {
-  return parseGrid(await getJson(currentUrl(cloudGridPoints(), GRID_FIELDS)), nowMs)
+  const points = cloudGridPoints()
+  meteoBudget.spend(points.length)
+  return parseGrid(await getJson(currentUrl(points, GRID_FIELDS)), nowMs)
 }
