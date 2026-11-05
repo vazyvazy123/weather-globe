@@ -296,6 +296,7 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     const here = el && d.w ? issAt(el, now) : null
     if (!el || !here) {
       g.style.display = ground.style.display = beacon.style.display = "none"
+      if (issCanvasRef.current) issCanvasRef.current.style.display = "none"
       for (const e of [past, next, foot, plumb]) e.setAttribute("d", "")
       return
     }
@@ -560,6 +561,21 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     placeOverlays()
   }, [iss, placeOverlays])
   useEffect(() => () => { issGl.current?.dispose(); issGl.current = null }, [])
+  // its context lost (a GPU reset), the drawn station stands in until the context is back
+  useEffect(() => {
+    const cv = issCanvasRef.current
+    if (!cv) return
+    const show = (gl3: IssGl | null) => {
+      issGl.current = gl3
+      issCraftRef.current?.style.setProperty("display", gl3 ? "none" : "")
+      placeOverlays()
+    }
+    const lost = (e: Event) => { e.preventDefault(); show(null) }
+    const restored = () => show(IssGl.create(cv))
+    cv.addEventListener("webglcontextlost", lost)
+    cv.addEventListener("webglcontextrestored", restored)
+    return () => { cv.removeEventListener("webglcontextlost", lost); cv.removeEventListener("webglcontextrestored", restored) }
+  }, [placeOverlays])
   // the ISS moves on by itself: it (and the pin) are placed again — never the globe drawn again
   useEffect(() => {
     placeOverlays()

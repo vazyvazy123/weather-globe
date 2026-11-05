@@ -173,6 +173,8 @@ export function App() {
     setFollowMode(mode)
     controller.follow(() => { const s = issAt(el, issClock()); return { lon: s.lon, lat: clampLat(s.lat) } }, Math.max(controller.camera.zoom, FOLLOW_ZOOM),
       () => { if (followCount.current === id) { issTime.current = { mode: null, from: 0 }; setFollowMode(null) } })
+    // under reduced motion the camera only went there: nothing is followed, and the clock stays real
+    if (!controller.following) { issTime.current = { mode: null, from: 0 }; setFollowMode(null) }
   }, [controller, issClock])
 
   const byId = useMemo(() => new Map((weather.cities ?? []).map((w) => [w.id, w])), [weather.cities])
@@ -220,8 +222,10 @@ export function App() {
   const trackCity = music.track?.city ?? null
   const selectedRef = useRef(selected)
   selectedRef.current = selected
+  // (not while a tour the user started turns the globe; the spin it opens with gives way)
+  const tourAsked = useRef(false)
   useEffect(() => {
-    if (trackCity && trackCity !== selectedRef.current && !controller.touring) flyToCity(trackCity, MUSIC_ZOOM)
+    if (trackCity && trackCity !== selectedRef.current && !(controller.touring && tourAsked.current)) flyToCity(trackCity, MUSIC_ZOOM)
   }, [trackCity, controller, flyToCity])
 
   // closing the player hands the keyboard focus back to the chip that opens it
@@ -286,7 +290,7 @@ export function App() {
         <h1>Weather Globe</h1>
         <nav className="tools" aria-label="Globe controls">
           <Menu label="Regions" title="Fly to a part of the world" items={REGIONS.map(([name, cam]) => ({ key: name, label: name, onSelect: () => controller.flyTo(cam) }))} />
-          <button type="button" className={`chip${touring ? " on" : ""}`} aria-pressed={touring} onClick={() => controller.setTouring(!touring)}>Tour</button>
+          <button type="button" className={`chip${touring ? " on" : ""}`} aria-pressed={touring} onClick={() => { tourAsked.current = !touring; controller.setTouring(!touring) }}>Tour</button>
           <button ref={musicChip} type="button" className={`chip chip-music${musicMode ? " on" : ""}`} aria-pressed={musicMode} onClick={() => setMusicMode((v) => !v)}
             title="Songs from around the world">♪ Music</button>
           <Menu label="Layers" title="What the globe shows" items={[

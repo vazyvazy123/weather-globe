@@ -85,8 +85,8 @@ export class GlobeCameraController {
   }
 
   /** The camera kept over a moving target (where it is at a frame's time; null ends the follow): eased onto it at
-   *  `zoom`, then the zoom left to the user. A move of the user's own, a fly-to, the tour or stopFollowing ends it, and
-   *  `onEnd` is told. */
+   *  `zoom`, the zoom then the user's. A move of the user's own, a fly-to, the tour or stopFollowing ends it, and `onEnd`
+   *  is told. Under reduced motion it only goes there, and nothing is followed (`following` stays false). */
   follow(target: (nowMs: number) => { lon: number; lat: number } | null, zoom = this.cam.zoom, onEnd?: () => void): void {
     this.stop()
     this.setTour(false)
@@ -96,8 +96,7 @@ export class GlobeCameraController {
       return
     }
     this.chase = { end: onEnd }
-    const from = this.cam
-    let start = -1, last = -Infinity, landed = false
+    let from = this.cam, goal = zoom, shown = from.zoom, start = -1, last = -Infinity
     const step = (now: number) => {
       this.frame = requestAnimationFrame(step)
       if (start < 0) start = now
@@ -105,11 +104,12 @@ export class GlobeCameraController {
       last = now
       const at = target(now)
       if (!at) { this.stop(); return }
+      // a zoom of the user's own (set() keeps the follow going) is kept from then on, even while easing on
+      if (this.cam.zoom !== shown) { goal = this.cam.zoom; from = { ...from, zoom: goal } }
       const k = Math.min(1, (now - start) / FLY_MS)
-      // easing onto it at its zoom; landed, the zoom is the user's
-      if (k < 1) this.emit(cameraBetween(from, { ...at, zoom }, ease(k)))
-      else if (!landed) { landed = true; this.emit({ ...at, zoom }) }
-      else this.emit({ ...at, zoom: this.cam.zoom })
+      const c = k < 1 ? cameraBetween(from, { ...at, zoom: goal }, ease(k)) : { ...at, zoom: goal }
+      shown = c.zoom
+      this.emit(c)
     }
     this.frame = requestAnimationFrame(step)
   }

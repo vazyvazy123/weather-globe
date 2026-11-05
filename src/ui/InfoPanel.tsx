@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 
 // The globe's sources, and what each layer shows now, kept out of the way: at the corner, one dim line of the credits the
 // data's licences ask to be seen (Open-Meteo's CC BY 4.0 among them) and a small ⓘ; either opens a card with what each
@@ -9,6 +9,7 @@ const link = (href: string, text: string) => <a href={href} target="_blank" rel=
 export function InfoPanel({ status, showIss, showMusic }: { status: readonly string[]; showIss: boolean; showMusic: boolean }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null), buttonRef = useRef<HTMLButtonElement>(null)
+  const cardId = useId()
 
   useEffect(() => {
     if (!open) return
@@ -21,8 +22,14 @@ export function InfoPanel({ status, showIss, showMusic }: { status: readonly str
 
   return (
     <div ref={rootRef} className="info">
+      <div className="info-line">
+        <button type="button" className="info-credit" onClick={() => setOpen((v) => !v)} tabIndex={-1} aria-hidden="true">© NASA · NOAA · Open-Meteo · Natural Earth</button>
+        <button ref={buttonRef} type="button" className={`info-button${open ? " on" : ""}`} aria-expanded={open} aria-controls={cardId}
+          aria-label="About this view: what it shows and its sources" onClick={() => setOpen((v) => !v)}>i</button>
+      </div>
+      {/* after its button, so Tab goes on into it (it is placed above, CSS) */}
       {open && (
-        <section className="info-card" role="dialog" aria-label="About this view">
+        <section id={cardId} className="info-card" role="dialog" aria-label="About this view">
           {status.length > 0 && (
             <>
               <h3>Now showing</h3>
@@ -40,11 +47,6 @@ export function InfoPanel({ status, showIss, showMusic }: { status: readonly str
           </ul>
         </section>
       )}
-      <div className="info-line">
-        <button type="button" className="info-credit" onClick={() => setOpen((v) => !v)} tabIndex={-1} aria-hidden="true">© NASA · NOAA · Open-Meteo · Natural Earth</button>
-        <button ref={buttonRef} type="button" className={`info-button${open ? " on" : ""}`} aria-expanded={open} aria-label="About this view: what it shows and its sources"
-          onClick={() => setOpen((v) => !v)}>i</button>
-      </div>
     </div>
   )
 }

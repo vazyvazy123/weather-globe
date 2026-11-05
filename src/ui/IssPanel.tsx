@@ -51,7 +51,8 @@ export function IssPanel({ el, pick, unit, music, mode, clock, onFollow, onFly, 
   const now = useNow(mode === "ride" ? 250 : 1000)
   const t = clock(), s = issAt(el, t)
   const below = whereBelow(s.lat, s.lon, CITIES, WORLD_LAND)
-  const lit = sunCosAt(s.lat, s.lon, subsolarPoint(t)) > 0
+  // day or night below as the globe shows it: by now's sun, even on the ride
+  const lit = sunCosAt(s.lat, s.lon, subsolarPoint(now)) > 0
   const ahead = Math.round((t - now) / 60_000)
   const mi = unit === "F", len = (km: number) => Math.round(mi ? km / KM_PER_MI : km).toLocaleString("en")
   const where = below.kind === "near" ? `Near ${below.city.name}, ${countryName(below.city.country)}` : below.kind === "land" ? "Over land" : `Over ${below.name}`

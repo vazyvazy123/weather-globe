@@ -102,6 +102,27 @@ describe("following a moving target, and the tour's pace", () => {
     expect(c.camera).toEqual({ lon: 61, lat: 10, zoom: 4 })
   })
 
+  test("a zoom of the user's own while it eases on is kept", () => {
+    const c = new GlobeCameraController({ lon: 0, lat: 0, zoom: 1 })
+    c.follow(() => ({ lon: 50, lat: 10 }), 2)
+    run(0); run(200)
+    const mid = c.camera.zoom
+    c.set(zoomed(c.camera, 3))
+    run(400); run(1000)
+    expect(c.following).toBe(true)
+    expect(c.camera.lon).toBeCloseTo(50)
+    expect(c.camera.zoom).toBeCloseTo(mid * 3)
+  })
+
+  test("under reduced motion a follow only goes there: nothing is followed", () => {
+    vi.stubGlobal("window", { matchMedia: (q: string) => ({ matches: q.includes("reduce") }) })
+    const c = new GlobeCameraController({ lon: 0, lat: 0, zoom: 1 }), ended = vi.fn()
+    c.follow(() => ({ lon: 50, lat: 10 }), 2, ended)
+    expect(c.camera).toEqual({ lon: 50, lat: 10, zoom: 2 })
+    expect(c.following).toBe(false)
+    expect(frames.size).toBe(0)
+  })
+
   test("a move of the user's own, a fly-to or the tour ends it, and says so", () => {
     const ends: Array<(c: GlobeCameraController) => void> = [
       (c) => c.set({ lon: 5, lat: 5, zoom: 1 }),
