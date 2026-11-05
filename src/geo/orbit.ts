@@ -3,7 +3,7 @@
 // and whose mean anomaly quickens with drag; then the Earth turned under it (Greenwich sidereal time, IAU 1982, as the
 // elements' TEME frame wants) for the point below on the WGS-84 ellipsoid. Within a fraction of a degree for a day or
 // so either side of the elements' epoch — plenty for a marker on a globe. Pure.
-import { greatCircleKm } from "./distance"
+import { EARTH_KM, greatCircleKm } from "./distance"
 
 export interface Elements {
   /** the elements' epoch (ms) */
@@ -104,6 +104,38 @@ export function issAt(el: Elements, tMs: number): SubPoint {
     altKm: h,
     speedKmh: Math.sqrt(MU * (2 / r - 1 / (a * RE))) * 3600,
   }
+}
+
+type Vec3 = readonly [number, number, number]
+
+/** The ISS as it flies — its usual attitude, local vertical and local horizontal: its place (Earth radii from the
+ *  centre; Earth-fixed, x toward 0° on the equator, y toward 90°E, z north) and its body's axes there: forward along its
+ *  path over the ground, the truss across the orbit, nadir down to the Earth's centre (right-handed: truss = nadir ×
+ *  forward). */
+export interface IssFrame {
+  readonly position: Vec3
+  readonly forward: Vec3
+  readonly truss: Vec3
+  readonly nadir: Vec3
+}
+
+const placeOf = (s: SubPoint): [number, number, number] => {
+  const k = 1 + s.altKm / EARTH_KM, p = s.lat * RAD, l = s.lon * RAD
+  return [k * Math.cos(p) * Math.cos(l), k * Math.cos(p) * Math.sin(l), k * Math.sin(p)]
+}
+const unitOf = (v: Vec3): [number, number, number] => {
+  const n = Math.hypot(v[0], v[1], v[2])
+  return [v[0] / n, v[1] / n, v[2] / n]
+}
+
+export function issFrame(el: Elements, tMs: number): IssFrame {
+  const position = placeOf(issAt(el, tMs)), ahead = placeOf(issAt(el, tMs + 500)), behind = placeOf(issAt(el, tMs - 500))
+  const nadir = unitOf([-position[0], -position[1], -position[2]])
+  const v = [ahead[0] - behind[0], ahead[1] - behind[1], ahead[2] - behind[2]]
+  const down = v[0] * nadir[0] + v[1] * nadir[1] + v[2] * nadir[2]
+  const forward = unitOf([v[0] - down * nadir[0], v[1] - down * nadir[1], v[2] - down * nadir[2]])
+  const truss: Vec3 = [nadir[1] * forward[2] - nadir[2] * forward[1], nadir[2] * forward[0] - nadir[0] * forward[2], nadir[0] * forward[1] - nadir[1] * forward[0]]
+  return { position, forward, truss, nadir }
 }
 
 /** The points below the ISS from one moment to another (ms), `stepMs` apart. */

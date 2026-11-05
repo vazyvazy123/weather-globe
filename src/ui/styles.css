@@ -141,6 +141,8 @@ a { color: var(--ink-2); }
 .iss-tag rect { fill: rgba(8, 11, 32, 0.88); stroke: rgba(160, 225, 255, 0.45); stroke-width: 1px; }
 .iss.selected .iss-tag rect { stroke: var(--accent); }
 .iss-tag text { font: 700 9.5px var(--sans); letter-spacing: 0.12em; fill: #d8efff; }
+/* the station in 3D (issGl.ts): a canvas over the globe, clicked through to the station's mark beneath */
+.iss-3d { position: absolute; left: 0; top: 0; pointer-events: none; }
 /* rings round the ISS while its panel is open: HTML, scaled by the compositor */
 .iss-beacon { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
 .iss-beacon i { position: absolute; left: -34px; top: -34px; width: 68px; height: 68px; border-radius: 50%; border: 1.4px solid rgba(160, 225, 255, 0.75);
