@@ -5,7 +5,7 @@ import type { Music, PlayStatus } from "./useMusic"
 
 // The music player over the globe: the song's cover glowing behind a glass card, the cover itself, the singer's photo,
 // where the song is from (with the weather there now), the cassette playing it, the time, and the controls. Folded, it
-// is a slim bar with the cover spinning like a record. Empty, it offers a world shuffle.
+// is a slim bar with the cover spinning like a record. Empty, it offers a world shuffle and the song of the day.
 // The previews are Apple's 30-second clips; each song links to its full version on Apple Music and YouTube.
 
 export interface Place { id: string; name: string; country: string; temp: string | null; time: string | null }
@@ -17,6 +17,8 @@ interface Props {
   /** fly the globe to the song's city */
   onFind: (cityId: string) => void
   boxRef: (el: HTMLElement | null) => void
+  /** the song of the day (the ISS's pick), offered beside the world shuffle while nothing plays */
+  daySong?: Track | null
 }
 
 /** the label stripes of the cassette, one pair per song (by its id) */
@@ -102,7 +104,7 @@ function Volume({ music }: { music: Music }) {
 
 const Eq = ({ on }: { on: boolean }) => <span className={`eq${on ? " on" : ""}`} aria-hidden="true"><i /><i /><i /><i /></span>
 
-export function MusicDock({ music, place, onClose, onFind, boxRef }: Props) {
+export function MusicDock({ music, place, onClose, onFind, boxRef, daySong = null }: Props) {
   const { track, status, audio } = music
   // on a phone the open player would cover the song's city: it starts folded
   const [folded, setFolded] = useState(() => typeof window !== "undefined" && window.matchMedia?.(NARROW).matches === true)
@@ -181,6 +183,11 @@ export function MusicDock({ music, place, onClose, onFind, boxRef }: Props) {
             <h3 className="dock-title">Sounds of the world</h3>
             <p className="dock-hint">Tap a glowing ♪ city for the songs people there know by heart, or let the world pick.</p>
             <button type="button" className="dock-world" onClick={music.playWorld}><Icon d={I.globe} /> Play the world</button>
+            {daySong && (
+              <button type="button" className="dock-world dock-day" onClick={() => music.playId(daySong.id)} title={`${daySong.title} by ${daySong.artist}, picked by the ISS`}>
+                <span aria-hidden="true">☀</span> Song of the day
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -222,12 +229,13 @@ export function MusicDock({ music, place, onClose, onFind, boxRef }: Props) {
   )
 }
 
-/** A city's songs, for its weather panel: tap one to play it. */
-export function SongList({ tracks, music, country }: { tracks: readonly Track[]; music: Music; country: string }) {
+/** A city's songs, for its weather panel: tap one to play it. `title` names the list (null: none). */
+export function SongList({ tracks, music, country, title }: { tracks: readonly Track[]; music: Music; country: string; title?: string | null }) {
   if (!tracks.length) return null
+  const heading = title === undefined ? `♪ Music from ${country}` : title
   return (
-    <section className="songs" aria-label={`Music from ${country}`}>
-      <h3>♪ Music from {country}</h3>
+    <section className="songs" aria-label={heading ?? `Music from ${country}`}>
+      {heading != null && <h3>{heading}</h3>}
       <ul>
         {tracks.map((tr) => {
           const on = music.track?.id === tr.id

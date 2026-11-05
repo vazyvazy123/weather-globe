@@ -121,6 +121,13 @@ export async function fetchCities(cities: readonly CityPoint[]): Promise<CityWea
   return parts.flat()
 }
 
+/** The weather now at one place (a place searched for): one call. */
+export async function fetchPoint(lat: number, lon: number): Promise<CityWeather> {
+  const point = { id: "point", lat, lon }
+  meteoBudget.spend(1)
+  return parseCities(await getJson(currentUrl([point], CITY_FIELDS, true)), [point])[0]
+}
+
 export async function fetchGrid(nowMs: number): Promise<CloudGrid> {
   const points = cloudGridPoints()
   meteoBudget.spend(points.length)

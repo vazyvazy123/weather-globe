@@ -19,7 +19,7 @@ export interface WeatherState {
   error: string | null
 }
 
-interface Source<T> { key: string; everyMs: number; read: () => Promise<T> }
+export interface Source<T> { key: string; everyMs: number; read: () => Promise<T> }
 
 interface Fresh<T> { value: T | null; atMs: number | null; error: string | null }
 
@@ -34,13 +34,14 @@ function readOnce<T>(src: Source<T>): Promise<T> {
   return run
 }
 
-/** A value kept fresh: the stored copy at once, a new read when it is due. */
-function useFresh<T>(src: Source<T>): Fresh<T> {
+/** A value kept fresh: the stored copy at once, a new read when it is due — while `on` (nothing is read while off). */
+export function useFresh<T>(src: Source<T>, on = true): Fresh<T> {
   const [state, setState] = useState((): Fresh<T> => {
     const s = stored<T>(src.key)
     return { value: s ? s.value : null, atMs: s ? s.atMs : null, error: null }
   })
   useEffect(() => {
+    if (!on) return
     let live = true, busy = false, triedAt = 0
     const tick = () => {
       if (busy || document.hidden) return
@@ -58,7 +59,7 @@ function useFresh<T>(src: Source<T>): Fresh<T> {
     const id = window.setInterval(tick, TICK_MS)
     document.addEventListener("visibilitychange", tick)
     return () => { live = false; window.clearInterval(id); document.removeEventListener("visibilitychange", tick) }
-  }, [src])
+  }, [src, on])
   return state
 }
 

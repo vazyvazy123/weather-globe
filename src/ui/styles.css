@@ -23,6 +23,7 @@ a { color: var(--ink-2); }
 .app { display: flex; flex-direction: column; height: 100%; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 16px;
   background: rgba(6, 8, 26, 0.92); border-bottom: 1px solid var(--line); z-index: 2; }
+.lead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
 .bar h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-1); }
 .tools { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { height: 28px; padding: 0 12px; border-radius: 14px; border: 1px solid var(--line); font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
@@ -84,6 +85,63 @@ a { color: var(--ink-2); }
   pointer-events: none; text-shadow: 0 1px 3px #000; }
 .caption .warn { color: var(--warn); }
 .caption .credit { color: var(--ink-4); pointer-events: auto; }
+/* the place search at the top left: the field, the completion drawn in grey behind it, and the list of places */
+.search { position: relative; display: flex; align-items: center; width: 250px; max-width: 100%; height: 30px; border-radius: 15px;
+  border: 1px solid var(--line); background: rgba(12, 15, 40, 0.75); transition: border-color 160ms, background-color 160ms; }
+.search:focus-within { border-color: var(--accent); background: rgba(14, 18, 48, 0.96); }
+.search-icon { flex: none; width: 14px; height: 14px; margin: 0 7px 0 11px; fill: none; stroke: var(--ink-4); stroke-width: 1.6px; stroke-linecap: round; }
+.search:focus-within .search-icon { stroke: var(--accent); }
+.search-field { position: relative; flex: 1; min-width: 0; height: 100%; }
+.search-field input, .search-ghost { position: absolute; inset: 0; width: 100%; margin: 0; padding: 0 12px 0 0; border: 0;
+  font: 500 13px/28px var(--sans); letter-spacing: 0.01em; }
+.search-field input { outline: 0; background: transparent; color: var(--ink-1); }
+.search-field input::placeholder { color: var(--ink-4); }
+.search-ghost { color: var(--ink-4); white-space: pre; overflow: hidden; pointer-events: none; }
+.search-ghost .typed { color: transparent; }
+.search-list { position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; width: max(100%, 320px); max-width: calc(100vw - 32px); margin: 0; padding: 6px;
+  list-style: none; border-radius: 12px; background: rgba(9, 12, 34, 0.98); border: 1px solid rgba(141, 151, 220, 0.25); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55); }
+.search-list li { display: flex; align-items: baseline; gap: 9px; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
+.search-list li[aria-selected="true"] { background: var(--accent-soft); color: var(--ink-1); }
+.search-list .kind { flex: none; width: 12px; text-align: center; font-size: 10px; color: var(--ink-4); }
+.search-list .kind.country { color: #8fb8ff; }
+.search-list .kind.place { color: var(--accent); }
+.search-list .name { white-space: nowrap; }
+.search-list .name mark { background: none; color: var(--ink-1); font-weight: 700; }
+.search-list .note { color: var(--accent); font-size: 11px; }
+.search-list .detail { min-width: 0; margin-left: auto; padding-left: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--ink-4); }
+
+/* the pin on a place found */
+.pin-shape { fill: var(--accent); stroke: rgba(8, 10, 28, 0.85); stroke-width: 1.2px; }
+.pin-hole { fill: rgba(8, 10, 28, 0.85); }
+.pin-label { font: 600 12px var(--sans); fill: var(--ink-1); paint-order: stroke; stroke: rgba(6, 8, 24, 0.9); stroke-width: 3px; stroke-linejoin: round; }
+
+/* the ISS and its path: dotted ahead, faint behind */
+.iss-track { fill: none; stroke: rgba(160, 225, 255, 0.5); stroke-width: 1.2px; stroke-dasharray: 1.5 4; stroke-linecap: round; }
+.iss-track.past { stroke: rgba(160, 225, 255, 0.2); stroke-dasharray: none; }
+.iss { cursor: pointer; outline: none; }
+.iss-hit { fill: transparent; }
+.iss-glow { fill: rgba(150, 220, 255, 0.16); transition: fill 160ms; }
+.iss:hover .iss-glow, .iss.selected .iss-glow { fill: rgba(150, 220, 255, 0.34); }
+.iss:focus-visible .iss-glow { stroke: var(--accent); stroke-width: 1.5px; }
+.iss-wing { fill: #3d6fb6; stroke: #cfe6ff; stroke-width: 0.8px; }
+.iss-truss { stroke: #e8f2ff; stroke-width: 1.2px; }
+.iss-body { fill: #f4f7ff; }
+.iss-label { font: 700 10.5px var(--sans); letter-spacing: 0.08em; fill: #cfe6ff; paint-order: stroke; stroke: rgba(6, 8, 24, 0.9); stroke-width: 3px; stroke-linejoin: round; }
+
+/* the ISS's panel */
+.iss-panel { width: min(290px, calc(100% - 32px)); }
+.iss-where { margin: 10px 0 8px !important; font-weight: 600; color: var(--ink-1); }
+.iss-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 0 6px; }
+.iss-stats div { padding: 6px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.iss-stats dt { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-4); }
+.iss-stats dd { margin: 2px 0 0; font-family: var(--mono); font-size: 12.5px; color: var(--ink-1); }
+.iss-follow { margin: 6px 0 2px; }
+.day-song { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.day-song h3 { margin: 0 0 4px; font-size: 13px; color: var(--accent); }
+.day-song .songs { margin-top: 8px; }
+.link { padding: 0; border: 0; background: none; font: inherit; color: var(--ink-1); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.link:hover { color: var(--accent); }
+
 /* the wind's caption and its speed scale (the trails' colours, windGl.ts) */
 .wind-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .wind-legend { display: inline-flex; align-items: flex-start; gap: 8px; padding-bottom: 11px; }

@@ -95,6 +95,8 @@
 .dock-world { display: inline-flex; align-items: center; gap: 8px; height: 36px; margin-top: 12px; padding: 0 16px; border-radius: 18px; font-size: 13px; font-weight: 700; color: #fff;
   background: linear-gradient(135deg, var(--s1), var(--s2)); box-shadow: 0 8px 22px rgba(228, 87, 46, 0.35); transition: transform 160ms; }
 .dock-world:hover { transform: translateY(-1px); }
+/* the song of the day beside it: the same shape, outlined */
+.dock-world.dock-day { margin-left: 8px; background: transparent; border: 1px solid rgba(244, 185, 66, 0.6); color: #f6d48c; box-shadow: none; }
 .dock-world .ic { width: 16px; height: 16px; }
 
 .dock-deck { display: block; max-width: 290px; margin: 14px auto 6px; filter: drop-shadow(0 16px 22px rgba(0, 0, 0, 0.55)); }
