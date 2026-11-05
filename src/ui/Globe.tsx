@@ -143,6 +143,8 @@ interface Props {
   /** the ISS's panel is open: the station is marked as chosen */
   issSelected?: boolean
   onIss?: () => void
+  /** the ISS's clock (ms): the real one unless a time-lapse ride runs it faster */
+  issClock?: () => number
 }
 
 type Vec3 = [number, number, number]
@@ -166,7 +168,7 @@ const abs = (b: LabelBox, x: number, y: number): LabelBox => [x + b[0], y + b[1]
 const hideCity = (c: CityEls) => { c.g.style.display = "none"; if (c.pill) c.pill.style.display = "none" }
 
 export const Globe = memo(function Globe({ cities, clouds, satellite, selected, onCity, controller, showClouds, tiles, onGpu, onDetail, reserveBottom = 0,
-  musicMode = false, playing = null, avoid = NO_BOXES, wind = null, pin = null, iss = null, issSelected = false, onIss }: Props) {
+  musicMode = false, playing = null, avoid = NO_BOXES, wind = null, pin = null, iss = null, issSelected = false, onIss, issClock }: Props) {
   const stageRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -258,8 +260,8 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
   const night = useMemo(() => new Set(cities.filter((c) => sunCosAt(c.lat, c.lon, sun) < NIGHT_COS).map((c) => c.id)), [cities, sun])
 
   // everything layout() needs from the latest render
-  const data = useRef({ showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, gl: null as GlobeGl | null })
-  data.current = { showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, gl: gl && gl !== "none" ? gl : null }
+  const data = useRef({ showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, issClock, gl: null as GlobeGl | null })
+  data.current = { showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, issClock, gl: gl && gl !== "none" ? gl : null }
   const els = useRef(new Map<string, CityEls>())
   /** where each label sat a moment ago (full pills and compact chips apart), so it holds its place as the globe moves */
   const sidesRef = useRef(new Map<string, LabelSide>())
@@ -290,7 +292,7 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     const g = issRef.current, craft = issCraftRef.current, past = issPastRef.current, next = issNextRef.current
     const foot = issFootRef.current, plumb = issPlumbRef.current, ground = issGroundRef.current, beacon = issBeaconRef.current
     if (!g || !craft || !past || !next || !foot || !plumb || !ground || !beacon) return
-    const el = d.iss, now = Date.now()
+    const el = d.iss, now = d.issClock ? d.issClock() : Date.now()
     const here = el && d.w ? issAt(el, now) : null
     if (!el || !here) {
       g.style.display = ground.style.display = beacon.style.display = "none"
@@ -304,7 +306,7 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
       return z < 0 && (x * x + y * y) * k * k < 1 ? null : [cx + r * k * x, cy - r * k * y]
     }
     let tr = issTrack.current
-    if (!tr || tr.el !== el || now - tr.at > ISS_TRACK_EVERY_MS) {
+    if (!tr || tr.el !== el || Math.abs(now - tr.at) > ISS_TRACK_EVERY_MS) {
       tr = { el, at: now, pts: groundTrack(el, now - ISS_PAST_MIN * 60_000, now + ISS_NEXT_MIN * 60_000, ISS_TRACK_STEP_MS) }
       issTrack.current = tr
     }

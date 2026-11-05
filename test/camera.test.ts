@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { GlobeCameraController, ZOOM_MAX, ZOOM_MIN, cameraBetween, clampLat, wrapLon, zoomed } from "../src/globe/camera"
 
 describe("camera math", () => {
@@ -68,6 +68,74 @@ describe("GlobeCameraController", () => {
     c.set({ lon: 5, lat: 0, zoom: 1 })
     expect(c.touring).toBe(false)
     expect(states).toEqual([true, false])
+    c.dispose()
+  })
+})
+
+describe("following a moving target, and the tour's pace", () => {
+  // animation frames run by hand: run(t) calls the frames asked for, at time t
+  let frames = new Map<number, (t: number) => void>(), next = 1
+  const run = (t: number) => { const due = [...frames.values()]; frames = new Map(); for (const cb of due) cb(t) }
+  beforeEach(() => {
+    frames = new Map()
+    vi.stubGlobal("requestAnimationFrame", (cb: (t: number) => void) => { frames.set(next, cb); return next++ })
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => { frames.delete(id) })
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  test("the camera eases onto the target, then keeps over it; its zoom stays the user's", () => {
+    const c = new GlobeCameraController({ lon: 0, lat: 0, zoom: 1 })
+    let lon = 50
+    c.follow(() => ({ lon, lat: 10 }), 2)
+    expect(c.following).toBe(true)
+    run(0); run(400); run(1000)
+    expect(c.camera.lon).toBeCloseTo(50)
+    expect(c.camera.zoom).toBeCloseTo(2)
+    lon = 60
+    run(1040)
+    expect(c.camera.lon).toBeCloseTo(60)
+    // a zoom (the wheel, the buttons) keeps the follow going
+    c.set(zoomed(c.camera, 2))
+    lon = 61
+    run(1080)
+    expect(c.following).toBe(true)
+    expect(c.camera).toEqual({ lon: 61, lat: 10, zoom: 4 })
+  })
+
+  test("a move of the user's own, a fly-to or the tour ends it, and says so", () => {
+    const ends: Array<(c: GlobeCameraController) => void> = [
+      (c) => c.set({ lon: 5, lat: 5, zoom: 1 }),
+      (c) => c.flyTo({ lon: 9, lat: 0, zoom: 1 }),
+      (c) => c.setTouring(true),
+      (c) => c.stopFollowing(),
+    ]
+    for (const end of ends) {
+      const c = new GlobeCameraController({ lon: 0, lat: 0, zoom: 1 }), ended = vi.fn()
+      c.follow(() => ({ lon: 50, lat: 0 }), 1, ended)
+      run(0)
+      end(c)
+      expect(ended).toHaveBeenCalledOnce()
+      expect(c.following).toBe(false)
+    }
+  })
+
+  test("a follow moves the camera at most ~30 times a second, however fast the frames come", () => {
+    const c = new GlobeCameraController({ lon: 0, lat: 0, zoom: 1 }), seen: number[] = []
+    c.subscribe((cam) => seen.push(cam.lon))
+    c.follow(() => ({ lon: 50, lat: 0 }), 1)
+    for (let t = 0; t <= 1000; t += 1000 / 120) run(t)
+    expect(seen.length).toBeGreaterThanOrEqual(25)
+    expect(seen.length).toBeLessThanOrEqual(32)
+  })
+
+  test("the tour turns the globe at most ~30 times a second", () => {
+    const c = new GlobeCameraController({ lon: 0, lat: 18, zoom: 1 }), seen: number[] = []
+    c.setTouring(true)
+    for (let t = 0; t <= 1000; t += 1000 / 120) run(t)
+    c.subscribe((cam) => seen.push(cam.lon))
+    for (let t = 1000; t <= 2000; t += 1000 / 120) run(t)
+    expect(seen.length).toBeGreaterThanOrEqual(25)
+    expect(seen.length).toBeLessThanOrEqual(32)
     c.dispose()
   })
 })
