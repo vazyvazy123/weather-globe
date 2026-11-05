@@ -21,16 +21,25 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 a { color: var(--ink-2); }
 
 .app { display: flex; flex-direction: column; height: 100%; }
-.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 16px;
+/* the bar: the title, the music in the middle, the globe's controls */
+.bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px 16px; padding: 8px 16px;
   background: rgba(6, 8, 26, 0.92); border-bottom: 1px solid var(--line); z-index: 2; }
 .bar h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-1); }
-.tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.tools { display: flex; flex-wrap: wrap; justify-content: flex-end; justify-self: end; gap: 6px; }
+@media (max-width: 860px) {
+  .bar { grid-template-columns: 1fr auto; }
+  .tools { grid-column: 1 / -1; justify-self: stretch; justify-content: center; }
+}
 .chip { height: 28px; padding: 0 12px; border-radius: 14px; border: 1px solid var(--line); font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
   color: var(--ink-3); transition: color 160ms, border-color 160ms, background-color 160ms; }
 .chip:hover { color: var(--ink-1); }
 .chip.on { color: var(--ink-1); border-color: var(--accent); background: var(--accent-soft); }
 .chip:disabled { opacity: 0.4; cursor: default; }
 .chip:focus-visible, .pill-city:focus-visible, .close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chip.chip-music { height: 40px; padding: 0 28px; border-radius: 20px; font-size: 15px; letter-spacing: 0.08em; color: var(--ink-1);
+  border-color: rgba(141, 151, 220, 0.45); background: rgba(141, 151, 220, 0.08); }
+.chip.chip-music:hover { border-color: var(--accent); }
+.chip.chip-music.on { background: var(--accent-soft); border-color: var(--accent); box-shadow: 0 0 18px rgba(141, 151, 220, 0.3); }
 
 /* deep space behind the globe, with a few faint stars */
 .stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background:

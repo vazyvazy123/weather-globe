@@ -49,7 +49,7 @@ const MUSIC_ZOOM = 2
 const PANEL_MARGIN_PX = 6
 const CITY_BY_ID = new Map(CITIES.map((c) => [c.id, c]))
 
-const readUnit = (): Unit => { try { return globalThis.localStorage?.getItem(UNIT_KEY) === "F" ? "F" : "C" } catch { return "C" } }
+const readUnit = (): Unit => { try { return globalThis.localStorage?.getItem(UNIT_KEY) === "C" ? "C" : "F" } catch { return "F" } }
 const readWind = (): boolean => { try { return globalThis.localStorage?.getItem(WIND_KEY) === "1" } catch { return false } }
 const ISS_KEY = "weather-globe:iss-on"
 const readIss = (): boolean => { try { return globalThis.localStorage?.getItem(ISS_KEY) !== "0" } catch { return true } }
@@ -163,6 +163,8 @@ export function App() {
   const issLiveRef = useRef(issLive)
   issLiveRef.current = issLive
   const followCount = useRef(0)
+  /** the ISS chip asked for a ride before the station's orbit was read: it starts once it is */
+  const rideWanted = useRef(false)
   /** Following the ISS: the camera kept over it (controller.follow) by the ride's clock or the real one; null stops. A
    *  move of the user's own, a fly-to or the tour ends it too (the controller says so, and the clock is real again). */
   const follow = useCallback((mode: FollowMode | null) => {
@@ -194,7 +196,7 @@ export function App() {
     const next = !showIss
     try { globalThis.localStorage?.setItem(ISS_KEY, next ? "1" : "0") } catch { /* the choice lasts this visit only */ }
     setShowIss(next)
-    if (!next) { setIssOpen(false); follow(null) }
+    if (!next) { setIssOpen(false); follow(null); rideWanted.current = false }
   }
   const switchWind = () => setShowWind((on) => {
     try { globalThis.localStorage?.setItem(WIND_KEY, on ? "0" : "1") } catch { /* the choice lasts this visit only */ }
@@ -252,6 +254,17 @@ export function App() {
   const pinMark = useMemo(() => (pin ? { lat: pin.lat, lon: pin.lon, name: pin.name } : null), [pin])
 
   const openIss = useCallback(() => { setIssOpen(true); setSelected(null); setPin(null) }, [])
+  // the ISS chip: ride along with the station (shown and chosen first), or, riding, stop
+  const rideIss = () => {
+    if (followMode) { follow(null); return }
+    if (!showIss) switchIss()
+    openIss()
+    if (issLiveRef.current) follow("ride")
+    else rideWanted.current = true
+  }
+  useEffect(() => {
+    if (issLive && rideWanted.current) { rideWanted.current = false; follow("ride") }
+  }, [issLive, follow])
 
   const city: City | undefined = selected ? CITY_BY_ID.get(selected) : undefined
   const cw = city ? byId.get(city.id) : undefined
@@ -288,11 +301,14 @@ export function App() {
     <div className="app">
       <header className="bar">
         <h1>Weather Globe</h1>
+        <button ref={musicChip} type="button" className={`chip chip-music${musicMode ? " on" : ""}`} aria-pressed={musicMode} onClick={() => setMusicMode((v) => !v)}
+          title="Songs from around the world">♪ Music</button>
         <nav className="tools" aria-label="Globe controls">
           <Menu label="Regions" title="Fly to a part of the world" items={REGIONS.map(([name, cam]) => ({ key: name, label: name, onSelect: () => controller.flyTo(cam) }))} />
-          <button type="button" className={`chip${touring ? " on" : ""}`} aria-pressed={touring} onClick={() => { tourAsked.current = !touring; controller.setTouring(!touring) }}>Tour</button>
-          <button ref={musicChip} type="button" className={`chip chip-music${musicMode ? " on" : ""}`} aria-pressed={musicMode} onClick={() => setMusicMode((v) => !v)}
-            title="Songs from around the world">♪ Music</button>
+          <button type="button" className={`chip${touring ? " on" : ""}`} aria-pressed={touring} title="Turn the globe slowly"
+            onClick={() => { tourAsked.current = !touring; controller.setTouring(!touring) }}>Globe</button>
+          <button type="button" className={`chip${followMode ? " on" : ""}`} aria-pressed={followMode != null} title="Ride along with the International Space Station"
+            onClick={rideIss}>ISS</button>
           <Menu label="Layers" title="What the globe shows" items={[
             { key: "clouds", label: "Clouds", checked: showClouds && gpu !== false, disabled: gpu === false, onSelect: () => setShowClouds((v) => !v) },
             { key: "wind", label: "Wind", checked: showWind && gpu !== false, disabled: gpu === false, onSelect: switchWind },
