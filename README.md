@@ -1,6 +1,6 @@
 # Weather Globe
 
-**Live: [weather-globe.salhi.com](https://weather-globe.salhi.com/)**
+**Live: [josephsalhi.com](https://josephsalhi.com/)**
 
 ![Weather Globe: live satellite clouds, day and night, city temperatures and the ISS](docs/screenshot.png)
 

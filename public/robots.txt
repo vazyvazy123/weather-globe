@@ -3,4 +3,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://weather-globe.salhi.com/sitemap.xml
+Sitemap: https://josephsalhi.com/sitemap.xml
