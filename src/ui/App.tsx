@@ -50,7 +50,8 @@ const PANEL_MARGIN_PX = 6
 const CITY_BY_ID = new Map(CITIES.map((c) => [c.id, c]))
 
 const readUnit = (): Unit => { try { return globalThis.localStorage?.getItem(UNIT_KEY) === "C" ? "C" : "F" } catch { return "F" } }
-const readWind = (): boolean => { try { return globalThis.localStorage?.getItem(WIND_KEY) === "1" } catch { return false } }
+// the wind shows from the start, as the ISS does, unless the viewer turned it off
+const readWind = (): boolean => { try { return globalThis.localStorage?.getItem(WIND_KEY) !== "0" } catch { return true } }
 const ISS_KEY = "weather-globe:iss-on"
 const readIss = (): boolean => { try { return globalThis.localStorage?.getItem(ISS_KEY) !== "0" } catch { return true } }
 const ISS_SOURCE: Source<IssTle> = { key: "weather-globe:iss-tle:v1", everyMs: ISS_EVERY_MS, read: fetchIssTle, valid: (v) => parseIssTle(v) != null }

@@ -40,7 +40,7 @@ weather data directly from the providers listed below.
 - **Weather-model clouds where the satellite is blind.** Open-Meteo's cloud cover on a coarse world grid fills the
   poles and the low cloud infrared cannot see; it is baked into a 4096 × 2048 cloud map with domain-warped noise, a
   strip per frame, so redraws cost the CPU nothing.
-- **The wind, drifting.** Turn on Wind and long, silky trails flow over the globe with the wind near the ground — a
+- **The wind, drifting.** From the start (Layers → Wind turns it off), long, silky trails flow over the globe with the wind near the ground — a
   soft blue-white for most of it, warming to gold and rose only in a gale — curling round storms and streaming with the
   trade winds. Each trail tapers from a bright, hair-thin head to nothing at its tail, and fades in and out slowly, so
   nothing pulses. The field is Open-Meteo's hourly forecast on a 7.5° × 10° grid, read between its points along smooth
