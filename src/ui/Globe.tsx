@@ -165,7 +165,11 @@ interface CityEls {
 }
 const NO_BOXES: readonly LabelBox[] = []
 const abs = (b: LabelBox, x: number, y: number): LabelBox => [x + b[0], y + b[1], x + b[2], y + b[3]]
-const hideCity = (c: CityEls) => { c.g.style.display = "none"; if (c.pill) c.pill.style.display = "none" }
+// (a city already hidden is left alone: most of them are, at every frame of a turn)
+const hideCity = (c: CityEls) => {
+  if (c.g.style.display !== "none") c.g.style.display = "none"
+  if (c.pill && c.pill.style.display !== "none") c.pill.style.display = "none"
+}
 
 export const Globe = memo(function Globe({ cities, clouds, satellite, selected, onCity, controller, showClouds, tiles, onGpu, onDetail, reserveBottom = 0,
   musicMode = false, playing = null, avoid = NO_BOXES, wind = null, pin = null, iss = null, issSelected = false, onIss, issClock }: Props) {
@@ -216,16 +220,19 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     const c = canvasRef.current
     if (!c) return
     let live = true, restores = 0
-    let current = GlobeGl.create(c)
-    setGl(current ?? "none")
+    let current: GlobeGl | null = null
+    // made while the page shows (the GPU builds its programs, the coastline arrives); one made after this is gone is let go
+    const make = () => GlobeGl.create(c).then((next) => {
+      if (!live) { next?.dispose(); return }
+      current = next
+      setGl(next ?? "none")
+    })
+    void make()
     const lost = (e: Event) => { e.preventDefault(); setGl("none") }
     const restored = () => {
       if (!live || restores >= 2) return
       restores++
-      const next = GlobeGl.create(c)
-      if (!live) { next?.dispose(); return }
-      if (next) { current = next; setGl(next) }
-      else setGl("none")
+      void make()
     }
     c.addEventListener("webglcontextlost", lost)
     c.addEventListener("webglcontextrestored", restored)
@@ -477,6 +484,12 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
   // stay where the pictures cannot be had)
   const onDetailRef = useRef(onDetail)
   onDetailRef.current = onDetail
+  // both asked for at once, from the start: NASA takes seconds to answer, so they come while the globe is made
+  useEffect(() => {
+    if (typeof WebGL2RenderingContext === "undefined") return
+    void tiles.base()
+    void tiles.bathymetry()
+  }, [tiles])
   useEffect(() => {
     if (!gl || gl === "none") return
     let live = true

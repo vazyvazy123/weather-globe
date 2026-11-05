@@ -446,30 +446,47 @@ export interface GlobeDraw {
   lightning?: boolean
 }
 
-function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader | null {
+// The programs are compiled and linked without asking how that went (asking waits for the GPU): both start at once, the
+// page goes on while they build (KHR_parallel_shader_compile says when they are done), and only then is each checked.
+interface Linking { prog: WebGLProgram; vs: WebGLShader; fs: WebGLShader }
+/** how often the GPU is asked whether the programs are linked yet (ms) */
+const LINK_POLL_MS = 16
+
+function shader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader | null {
   const s = gl.createShader(type)
   if (!s) return null
   gl.shaderSource(s, src)
   gl.compileShader(s)
-  if (gl.getShaderParameter(s, gl.COMPILE_STATUS)) return s
-  console.warn("[globe] shader did not compile:", gl.getShaderInfoLog(s))
-  gl.deleteShader(s)
-  return null
+  return s
 }
 
-function link(gl: WebGL2RenderingContext, frag: string): WebGLProgram | null {
-  const vs = compile(gl, gl.VERTEX_SHADER, VERT), fs = compile(gl, gl.FRAGMENT_SHADER, frag)
+function startLink(gl: WebGL2RenderingContext, frag: string): Linking | null {
+  const vs = shader(gl, gl.VERTEX_SHADER, VERT), fs = shader(gl, gl.FRAGMENT_SHADER, frag)
   const prog = gl.createProgram()
   if (!vs || !fs || !prog) return null
   gl.attachShader(prog, vs)
   gl.attachShader(prog, fs)
   gl.bindAttribLocation(prog, 0, "a_pos")
   gl.linkProgram(prog)
+  return { prog, vs, fs }
+}
+
+/** Waits, without holding the page, until the GPU has linked them; where the browser cannot say, the check that follows
+ *  waits instead. */
+async function linked(gl: WebGL2RenderingContext, all: readonly Linking[]): Promise<void> {
+  const ext = gl.getExtension("KHR_parallel_shader_compile")
+  if (!ext) return
+  const done = () => all.every((l) => gl.getProgramParameter(l.prog, ext.COMPLETION_STATUS_KHR) === true)
+  while (!gl.isContextLost() && !done()) await new Promise((r) => setTimeout(r, LINK_POLL_MS))
+}
+
+function finishLink(gl: WebGL2RenderingContext, { prog, vs, fs }: Linking): WebGLProgram | null {
+  const ok = gl.getProgramParameter(prog, gl.LINK_STATUS) === true
+  if (!ok) console.warn("[globe] program did not link:", gl.getProgramInfoLog(prog), gl.getShaderInfoLog(vs), gl.getShaderInfoLog(fs))
   gl.deleteShader(vs)
   gl.deleteShader(fs)
-  if (gl.getProgramParameter(prog, gl.LINK_STATUS)) return prog
-  console.warn("[globe] program did not link:", gl.getProgramInfoLog(prog))
-  return null
+  if (!ok) gl.deleteProgram(prog)
+  return ok ? prog : null
 }
 
 /** The sun's direction seen from the camera: the same projection as orthoProject, without the horizon cut. */
@@ -581,10 +598,16 @@ export class GlobeGl {
     private readonly mapH: number,
   ) {}
 
-  static create(canvas: HTMLCanvasElement): GlobeGl | null {
+  /** null where WebGL2 is unavailable. It resolves once the GPU has built the programs and the land is drawn: the page
+   *  shows and answers meanwhile. */
+  static async create(canvas: HTMLCanvasElement): Promise<GlobeGl | null> {
     const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "low-power" })
     if (!gl) return null
-    const prog = link(gl, FRAG), bake = link(gl, BAKE_FRAG)
+    const main = startLink(gl, FRAG), baking = startLink(gl, BAKE_FRAG)
+    if (!main || !baking) return null
+    const [, mask] = await Promise.all([linked(gl, [main, baking]), landMask()])
+    if (gl.isContextLost()) return null
+    const prog = finishLink(gl, main), bake = finishLink(gl, baking)
     if (!prog || !bake) return null
     // the larger maps where the GPU holds them (WebGL2 promises 2048)
     const big = (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number) >= CLOUD_MAP_W
@@ -603,7 +626,7 @@ export class GlobeGl {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
     gl.bindVertexArray(null)
     gl.bindTexture(gl.TEXTURE_2D, landTex)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, big ? landMask() : halved(landMask()))
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, big ? mask : halved(mask))
     gl.generateMipmap(gl.TEXTURE_2D)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
     anisotropic(gl)

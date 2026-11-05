@@ -2,8 +2,8 @@
 // Earth's 1:50m coastline: red = land, crisp; green = the land blurred a little (water near a coast), blue = blurred a lot
 // (how far inland a place is) — both drawn smaller and stretched, the blur being the costly part. A ring that crosses the
 // date line is unwrapped and drawn on both sides of it; one that circles a pole (Antarctica) is closed along that pole's
-// edge.
-import { WORLD_LAND_FINE } from "../geo/worldLandFine"
+// edge. The coastline is the largest part of the page's code: it is a file of its own, which main.tsx starts reading
+// first, so the page shows while it comes.
 
 export const LAND_MASK_W = 4096
 export const LAND_MASK_H = 2048
@@ -26,14 +26,29 @@ export function unwrapRing(ring: readonly number[]): { pts: number[]; turns: num
   return { pts, turns: Math.round((pts[pts.length - 2] - pts[0] + close) / 360) }
 }
 
-let cached: HTMLCanvasElement | null = null
+/** how far the land's blur reaches (degrees; the inland channel's blur, three times its spread) */
+const WRAP_REACH_DEG = 20
 
-/** The land's outline at the mask's full size. */
-function landPath(): Path2D {
-  const x = (lon: number) => ((lon + 180) / 360) * LAND_MASK_W
-  const y = (lat: number) => ((90 - lat) / 180) * LAND_MASK_H
-  const path = new Path2D()
-  for (const ring of WORLD_LAND_FINE) {
+/** The copies of a ring (with continuous longitudes) to draw, by whole turns, so the picture wraps at the date line:
+ *  itself, and a turn east or west where it comes within the blur's reach of the other edge. */
+export function wrapShifts(pts: readonly number[]): number[] {
+  let west = Infinity, east = -Infinity
+  for (let i = 0; i < pts.length; i += 2) { west = Math.min(west, pts[i]); east = Math.max(east, pts[i]) }
+  const shifts = [0]
+  if (east > 180 - WRAP_REACH_DEG) shifts.push(-360)
+  if (west < -180 + WRAP_REACH_DEG) shifts.push(360)
+  return shifts
+}
+
+let cached: Promise<HTMLCanvasElement> | null = null
+
+/** The land's outline at the mask's full size, as SVG path data: one Path2D made from it is built at once, many times
+ *  faster than a call for each of its tens of thousands of points. */
+export function landPathData(rings: readonly (readonly number[])[]): string {
+  const x = (lon: number) => (((lon + 180) / 360) * LAND_MASK_W).toFixed(1)
+  const y = (lat: number) => (((90 - lat) / 180) * LAND_MASK_H).toFixed(1)
+  const parts: string[] = []
+  for (const ring of rings) {
     const { pts, turns } = unwrapRing(ring)
     if (pts.length < 6) continue
     if (turns !== 0) {
@@ -42,13 +57,13 @@ function landPath(): Path2D {
       const pole = latSum < 0 ? -90 : 90
       pts.push(pts[pts.length - 2], pole, pts[0], pole)
     }
-    for (const shift of [-360, 0, 360]) {
-      path.moveTo(x(pts[0] + shift), y(pts[1]))
-      for (let i = 2; i + 1 < pts.length; i += 2) path.lineTo(x(pts[i] + shift), y(pts[i + 1]))
-      path.closePath()
+    for (const shift of wrapShifts(pts)) {
+      let d = `M${x(pts[0] + shift)} ${y(pts[1])}`
+      for (let i = 2; i + 1 < pts.length; i += 2) d += `L${x(pts[i] + shift)} ${y(pts[i + 1])}`
+      parts.push(`${d}Z`)
     }
   }
-  return path
+  return parts.join("")
 }
 
 /** The land filled in one colour and blurred, on a canvas `scale` times the mask's size (blur in that canvas's pixels). */
@@ -67,15 +82,19 @@ function blurredLand(path: Path2D, scale: number, blurPx: number, colour: string
   return b
 }
 
-/** Drawn once per window (4096 × 2048; the blurred channels at a half and a quarter of that). */
-export function landMask(): HTMLCanvasElement {
-  if (cached) return cached
+/** Drawn once per window (4096 × 2048; the blurred channels at a half and a quarter of that), once the coastline has come. */
+export function landMask(): Promise<HTMLCanvasElement> {
+  cached ??= import("../geo/worldLandFine").then(({ WORLD_LAND_FINE }) => drawMask(WORLD_LAND_FINE))
+  return cached
+}
+
+function drawMask(rings: readonly (readonly number[])[]): HTMLCanvasElement {
   const c = document.createElement("canvas")
   c.width = LAND_MASK_W
   c.height = LAND_MASK_H
   const ctx = c.getContext("2d")
   if (!ctx) return c
-  const path = landPath()
+  const path = new Path2D(landPathData(rings))
   ctx.fillStyle = "#000"
   ctx.fillRect(0, 0, LAND_MASK_W, LAND_MASK_H)
   ctx.fillStyle = "rgb(255 0 0)"
@@ -86,6 +105,5 @@ export function landMask(): HTMLCanvasElement {
   ctx.drawImage(blurredLand(path, 0.5, 6, "rgb(0 255 0)"), 0, 0, LAND_MASK_W, LAND_MASK_H)
   ctx.drawImage(blurredLand(path, 0.25, 18, "rgb(0 0 255)"), 0, 0, LAND_MASK_W, LAND_MASK_H)
   ctx.globalCompositeOperation = "source-over"
-  cached = c
   return c
 }

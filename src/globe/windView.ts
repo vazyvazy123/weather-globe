@@ -16,6 +16,9 @@ const STEP_MS = 1000 / STEPS_PER_S
 /** between steps the view waits on a timer, asking for no frames, until this long before the next is due: then it asks
  *  for the one frame it steps in (the frame after the wait, at 60 Hz or 120 Hz, falls about a step on) */
 const FRAME_SLACK_MS = 6
+/** after a step the camera's frame drove, the trails' own next step waits this long: while the globe turns, its next
+ *  frame comes first (and steps them), so they are drawn once a frame at any refresh rate */
+const AFTER_VIEW_MS = STEP_MS * 1.5
 /** the lines' width at a trail's head (CSS px); they thin toward the tail */
 const LINE_PX = 1.0
 const SETTLE_AFTER_MS = 200
@@ -60,9 +63,17 @@ export class WindView {
     this.cam = { lon: cam.lon, lat: cam.lat }
     this.geom = geom
     if (!this.frame) return
-    this.draw()
-    if (!reducedMotion()) this.run()
-    else if (viewKey(this.cam, geom) !== this.settledFor) this.settleSoon(SETTLE_AFTER_MS)
+    if (reducedMotion()) {
+      this.draw()
+      if (viewKey(this.cam, geom) !== this.settledFor) this.settleSoon(SETTLE_AFTER_MS)
+      return
+    }
+    // the trails step and are drawn with the globe's frame, their own steps held off while the frames come: one drawing a
+    // frame while the globe turns, not the globe's and the steps' both
+    const running = this.raf !== 0 || this.waitTimer !== 0
+    this.stop()
+    if (!running) this.lastStep = performance.now()
+    this.step(performance.now(), AFTER_VIEW_MS)
   }
 
   dispose(): void {
@@ -101,14 +112,17 @@ export class WindView {
     window.clearTimeout(this.settleTimer)
   }
 
-  private readonly tick = (now: number): void => {
+  private readonly tick = (now: number): void => { this.step(now, STEP_MS - FRAME_SLACK_MS) }
+
+  /** One step of the trails, drawn; the next asked for `nextInMs` from now. */
+  private step(now: number, nextInMs: number): void {
     this.raf = 0
     const { frame, cam, geom } = this
     if (!this.gl || !frame || !cam || !geom) return
     this.particles.step(frame, cam, geom, Math.min(0.1, (now - this.lastStep) / 1000))
     this.lastStep = now
     this.draw()
-    this.waitTimer = window.setTimeout(() => { this.waitTimer = 0; this.raf = window.requestAnimationFrame(this.tick) }, STEP_MS - FRAME_SLACK_MS)
+    this.waitTimer = window.setTimeout(() => { this.waitTimer = 0; this.raf = window.requestAnimationFrame(this.tick) }, nextInMs)
   }
 
   private settleSoon(ms: number): void {
