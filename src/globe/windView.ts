@@ -6,7 +6,7 @@
 import { reducedMotion } from "./camera"
 import type { WindFrame } from "./windField"
 import { WindGl } from "./windGl"
-import { MAX_PARTICLES, SEG_FLOATS, TRAIL, WindParticles, type WindCamera, type WindScreen } from "./windParticles"
+import { MAX_PARTICLES, SEGMENTS_PER_TRAIL, SEG_FLOATS, WindParticles, type WindCamera, type WindScreen } from "./windParticles"
 
 /** the screen (CSS px) and its device pixels per CSS pixel */
 export interface WindGeom extends WindScreen { readonly dpr: number }
@@ -16,15 +16,15 @@ const STEP_MS = 1000 / STEPS_PER_S
 /** between steps the view waits on a timer, asking for no frames, until this long before the next is due: then it asks
  *  for the one frame it steps in (the frame after the wait, at 60 Hz or 120 Hz, falls about a step on) */
 const FRAME_SLACK_MS = 6
-/** the lines' width, CSS px */
-const LINE_PX = 1.1
+/** the lines' width at a trail's head (CSS px); they thin toward the tail */
+const LINE_PX = 1.0
 const SETTLE_AFTER_MS = 200
 
 const viewKey = (c: WindCamera, g: WindGeom): string => [c.lon, c.lat, g.w, g.h, g.cx, g.cy, g.r, g.dpr].join(",")
 
 export class WindView {
   private readonly particles = new WindParticles()
-  private readonly segs = new Float32Array(MAX_PARTICLES * (TRAIL - 1) * SEG_FLOATS)
+  private readonly segs = new Float32Array(MAX_PARTICLES * SEGMENTS_PER_TRAIL * SEG_FLOATS)
   private frame: WindFrame | null = null
   private cam: WindCamera | null = null
   private geom: WindGeom | null = null

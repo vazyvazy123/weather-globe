@@ -1,9 +1,9 @@
 // The wind's particles: points drifting with the wind (windField.ts) over the part of the globe in view, each leaving a
-// short trail of where it was, living a few seconds and born again somewhere in view — so the view stays evenly filled
-// however close the camera is. They move the wind's way at a speed on screen proportional to its own
-// (PX_PER_S_PER_MS: the same at every zoom). Their places are kept on the sphere, so turning the globe carries the
-// trails along with it. The state is typed arrays changed in place each step: thousands of particles, thirty times a
-// second.
+// long, fading trail of where it was — few of them, slow and long-lived, so the wind reads as silk rather than as
+// scattered dashes — born again somewhere in view when they die or leave it, so the view stays evenly filled however
+// close the camera is. They move the wind's way at a speed on screen proportional to its own (PX_PER_S_PER_MS: the same
+// at every zoom). Their places are kept on the sphere, so turning the globe carries the trails along with it. The state
+// is typed arrays changed in place each step: hundreds of particles, thirty times a second.
 import { sampleWind, type WindFrame } from "./windField"
 
 /** the point under the camera (degrees) */
@@ -12,18 +12,24 @@ export interface WindCamera { readonly lon: number; readonly lat: number }
 export interface WindScreen { readonly w: number; readonly h: number; readonly cx: number; readonly cy: number; readonly r: number }
 
 /** the places a trail keeps, the newest first */
-export const TRAIL = 14
-/** a trail segment as drawn: x0, y0, x1, y1 (device px, y down), opacity, the wind's speed (m/s) */
-export const SEG_FLOATS = 6
+export const TRAIL = 36
+/** a trail is drawn as segments between every SEG_STRIDE-th place (consecutive places are a pixel or so apart) */
+const SEG_STRIDE = 3
+export const SEGMENTS_PER_TRAIL = Math.ceil((TRAIL - 1) / SEG_STRIDE)
+/** a trail segment as drawn: x0, y0, x1, y1 (device px, y down), opacity, the wind's speed (m/s), and its place along
+ *  the trail (0 at the head, toward 1 at the tail) */
+export const SEG_FLOATS = 7
 /** CSS px a second a particle moves per m/s of wind */
-export const PX_PER_S_PER_MS = 4.5
-export const MAX_PARTICLES = 4000
+export const PX_PER_S_PER_MS = 3.5
+export const MAX_PARTICLES = 2500
 /** CSS px² of globe in view per particle */
-const AREA_PER_PARTICLE = 700
-/** a particle lives this many steps (at 30 a second, ~1.7–3.7 s), fading in and out over FADE_STEPS */
-const LIFE_MIN = 50
-const LIFE_MAX = 110
-const FADE_STEPS = 8
+const AREA_PER_PARTICLE = 1300
+/** a particle lives this many steps (at 30 a second, 3–6.7 s), fading in and out over FADE_STEPS */
+const LIFE_MIN = 90
+const LIFE_MAX = 200
+const FADE_STEPS = 20
+/** the trail's opacity falls from its head as (1 - place)^TAIL_FALL */
+const TAIL_FALL = 1.6
 /** a particle this far off the screen (CSS px), past this latitude, or behind the horizon is born again in view */
 const MARGIN_PX = 20
 const POLE_LAT = 85
@@ -106,13 +112,15 @@ export class WindParticles {
       const pts = Math.min(this.age[i] + 1, TRAIL)
       const lifeA = Math.min(1, (this.age[i] + 1) / FADE_STEPS, (this.life[i] - this.age[i]) / FADE_STEPS)
       if (pts < 2 || lifeA <= 0) continue
-      for (let k = 0; k + 1 < pts && (n + 1) * SEG_FLOATS <= out.length; k++) {
-        const a = i * TRAIL + (this.head - k + TRAIL) % TRAIL, b = i * TRAIL + (this.head - k - 1 + TRAIL) % TRAIL
+      for (let k = 0; k + 1 < pts && (n + 1) * SEG_FLOATS <= out.length; k += SEG_STRIDE) {
+        const k2 = Math.min(k + SEG_STRIDE, pts - 1)
+        const a = i * TRAIL + (this.head - k + TRAIL) % TRAIL, b = i * TRAIL + (this.head - k2 + TRAIL) % TRAIL
         const [ax, ay, az] = toCamera(m, t[a * 3], t[a * 3 + 1], t[a * 3 + 2])
         const [bx, by, bz] = toCamera(m, t[b * 3], t[b * 3 + 1], t[b * 3 + 2])
         const z = Math.min(az, bz) / HORIZON_Z
         if (z <= 0) continue
-        const alpha = lifeA * (1 - k / (TRAIL - 1)) * (z >= 1 ? 1 : z * z * (3 - 2 * z))
+        const place = k / (TRAIL - 1)
+        const alpha = lifeA * Math.pow(1 - place, TAIL_FALL) * (z >= 1 ? 1 : z * z * (3 - 2 * z))
         const o = n * SEG_FLOATS
         out[o] = (s.cx + s.r * ax) * dpr
         out[o + 1] = (s.cy - s.r * ay) * dpr
@@ -120,6 +128,7 @@ export class WindParticles {
         out[o + 3] = (s.cy - s.r * by) * dpr
         out[o + 4] = alpha
         out[o + 5] = this.speed[a]
+        out[o + 6] = place
         n++
       }
     }

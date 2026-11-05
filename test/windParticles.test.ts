@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { WIND_GRID, type WindGrid } from "../src/data/wind"
 import { windAt, type WindFrame } from "../src/globe/windField"
-import { SEG_FLOATS, TRAIL, WindParticles, cameraMatrix, toCamera, unproject } from "../src/globe/windParticles"
+import { SEGMENTS_PER_TRAIL, SEG_FLOATS, WindParticles, cameraMatrix, toCamera, unproject } from "../src/globe/windParticles"
 
 const RAD = Math.PI / 180
 
@@ -56,7 +56,7 @@ describe("WindParticles", () => {
     const far = new WindParticles(seeded(1)), near = new WindParticles(seeded(1))
     far.step(steady(5, 0), CAM, { ...SCREEN, r: 100 }, 1 / 30)
     near.step(steady(5, 0), CAM, { ...SCREEN, r: 900 }, 1 / 30)
-    expect(far.count).toBeGreaterThan(30)
+    expect(far.count).toBeGreaterThan(15)
     expect(near.count).toBeGreaterThan(far.count * 3)
   })
 
@@ -72,7 +72,7 @@ describe("WindParticles", () => {
 
   test("trails show from the second step, and stay inside the screen and on the near side", () => {
     const p = new WindParticles(seeded(3)), f = steady(-6, 8)
-    const out = new Float32Array(p.capacity * (TRAIL - 1) * SEG_FLOATS)
+    const out = new Float32Array(p.capacity * SEGMENTS_PER_TRAIL * SEG_FLOATS)
     p.step(f, CAM, SCREEN, 1 / 30)
     expect(p.segments(CAM, SCREEN, 1, out)).toBe(0)
     for (let k = 0; k < 40; k++) p.step(f, CAM, SCREEN, 1 / 30)
@@ -94,6 +94,21 @@ describe("WindParticles", () => {
     // 10 m/s, less only toward the pole (in view here), where the wind dies away
     expect(s0).toBeGreaterThan(0)
     expect(s1).toBeLessThanOrEqual(10.01)
+    // each segment's place along its trail: 0 at the head, short of 1 at the tail
+    const [t0, t1] = range((o) => [out[o + 6]])
+    expect(t0).toBe(0)
+    expect(t1).toBeLessThan(1)
+  })
+
+  test("a trail is drawn bright at its head and fades along it to the tail", () => {
+    const p = new WindParticles(seeded(6)), f = steady(8, 0)
+    const out = new Float32Array(p.capacity * SEGMENTS_PER_TRAIL * SEG_FLOATS)
+    p.settle(f, CAM, SCREEN)
+    const n = p.segments(CAM, SCREEN, 1, out)
+    const head: number[] = [], tail: number[] = []
+    for (let s = 0; s < n; s++) (out[s * SEG_FLOATS + 6] === 0 ? head : out[s * SEG_FLOATS + 6] > 0.8 ? tail : []).push(out[s * SEG_FLOATS + 4])
+    const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length
+    expect(mean(tail)).toBeLessThan(mean(head) / 4)
   })
 
   test("a particle that drifts off the globe's near side is born again inside the view", () => {
@@ -108,8 +123,8 @@ describe("WindParticles", () => {
 
   test("settle draws whole trails at once (reduced motion: no frames follow)", () => {
     const p = new WindParticles(seeded(5)), f = steady(8, 0)
-    const out = new Float32Array(p.capacity * (TRAIL - 1) * SEG_FLOATS)
+    const out = new Float32Array(p.capacity * SEGMENTS_PER_TRAIL * SEG_FLOATS)
     p.settle(f, CAM, SCREEN)
-    expect(p.segments(CAM, SCREEN, 1, out)).toBeGreaterThan(p.count * (TRAIL - 3))
+    expect(p.segments(CAM, SCREEN, 1, out)).toBeGreaterThan(p.count * (SEGMENTS_PER_TRAIL - 2))
   })
 })

@@ -1,15 +1,16 @@
 // The wind drawn on a canvas of its own, over the globe's (WebGL2): each trail segment a thin quad — instanced, its four
-// corners made from the segment's two ends — smoothed at its edges and coloured by the wind's speed: pale blue and faint
-// where it is calm, white in a breeze, gold, orange and rose in a gale. Being its own canvas, the wind can move thirty
+// corners made from the segment's two ends — smoothed at its edges, thinning and fading from the trail's bright head to
+// its tail, and coloured by the wind's speed: soft blue-white for most wind, gold, orange and rose only in a gale. Being its own canvas, the wind can move thirty
 // times a second without the globe being drawn again.
-import { MAX_PARTICLES, SEG_FLOATS, TRAIL } from "./windParticles"
+import { MAX_PARTICLES, SEGMENTS_PER_TRAIL, SEG_FLOATS } from "./windParticles"
 
 const VERT = `#version 300 es
 layout(location = 0) in vec4 a_seg;   // x0, y0, x1, y1: device px, y down
-layout(location = 1) in vec2 a_look;  // opacity, the wind's speed (m/s)
+layout(location = 1) in vec3 a_look;  // opacity, the wind's speed (m/s), the place along the trail (0 at its head)
 uniform vec2 u_size;
-uniform float u_half;                 // half the line's width, device px
+uniform float u_half;                 // half the line's width at a trail's head, device px
 out float v_across;
+out float v_half;
 out float v_alpha;
 out float v_speed;
 void main() {
@@ -17,10 +18,11 @@ void main() {
   vec2 d = a_seg.zw - a_seg.xy;
   float len = length(d);
   vec2 t = len > 1e-3 ? d / len : vec2(1.0, 0.0), n = vec2(-t.y, t.x);
-  // a pixel more each side for the smoothed edge
-  float w = u_half + 1.0;
+  // the trail thins toward its tail; a pixel more each side for the smoothed edge
+  float hw = u_half * (1.0 - 0.65 * a_look.z), w = hw + 1.0;
   vec2 p = mix(a_seg.xy, a_seg.zw, along) + n * side * w;
   v_across = side * w;
+  v_half = hw;
   v_alpha = a_look.x;
   v_speed = a_look.y;
   gl_Position = vec4(p.x / u_size.x * 2.0 - 1.0, 1.0 - p.y / u_size.y * 2.0, 0.0, 1.0);
@@ -28,25 +30,26 @@ void main() {
 
 const FRAG = `#version 300 es
 precision mediump float;
-uniform highp float u_half;           // (as precise as the vertex shader's, or the two will not link)
 in float v_across;
+in float v_half;
 in float v_alpha;
 in float v_speed;
 out vec4 outColor;
-// m/s → colour: calm blue-white, white, gold, orange, rose
+// m/s → colour: soft blue-white for most wind, warming to gold, orange and rose only in a gale
 vec3 palette(float s) {
-  vec3 c = mix(vec3(0.62, 0.78, 1.0), vec3(1.0), smoothstep(2.0, 9.0, s));
-  c = mix(c, vec3(1.0, 0.86, 0.45), smoothstep(10.0, 16.0, s));
-  c = mix(c, vec3(1.0, 0.56, 0.25), smoothstep(16.0, 23.0, s));
-  return mix(c, vec3(1.0, 0.33, 0.5), smoothstep(23.0, 32.0, s));
+  vec3 c = mix(vec3(0.70, 0.82, 1.0), vec3(0.95, 0.97, 1.0), smoothstep(3.0, 12.0, s));
+  c = mix(c, vec3(1.0, 0.84, 0.48), smoothstep(14.0, 19.0, s));
+  c = mix(c, vec3(1.0, 0.58, 0.30), smoothstep(19.0, 25.0, s));
+  return mix(c, vec3(1.0, 0.36, 0.52), smoothstep(25.0, 33.0, s));
 }
 void main() {
-  float edge = clamp(u_half + 0.5 - abs(v_across), 0.0, 1.0);
-  float a = v_alpha * edge * (0.2 + 0.42 * smoothstep(0.5, 12.0, v_speed));
+  // the share of the pixel the line covers (a line thinner than a pixel covers less of it)
+  float edge = clamp(v_half + 0.5 - abs(v_across), 0.0, 1.0);
+  float a = v_alpha * edge * (0.22 + 0.5 * smoothstep(1.0, 14.0, v_speed));
   outColor = vec4(palette(v_speed) * a, a);
 }`
 
-const MAX_SEGMENTS = MAX_PARTICLES * (TRAIL - 1)
+const MAX_SEGMENTS = MAX_PARTICLES * SEGMENTS_PER_TRAIL
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader | null {
   const s = gl.createShader(type)
@@ -91,7 +94,7 @@ export class WindGl {
     gl.vertexAttribPointer(0, 4, gl.FLOAT, false, SEG_FLOATS * 4, 0)
     gl.vertexAttribDivisor(0, 1)
     gl.enableVertexAttribArray(1)
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, SEG_FLOATS * 4, 16)
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, SEG_FLOATS * 4, 16)
     gl.vertexAttribDivisor(1, 1)
     gl.bindVertexArray(null)
     return new WindGl(gl, prog, vao, buf, { size: gl.getUniformLocation(prog, "u_size"), half: gl.getUniformLocation(prog, "u_half") })
