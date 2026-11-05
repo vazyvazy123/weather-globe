@@ -6,7 +6,7 @@ import { useBox } from "./useBox"
 import { CITIES, type City } from "../data/cities"
 import { countryName, MUSIC_CITIES, TRACKS, tracksForCity, WORLD_ORDER } from "../data/music"
 import { useFresh, useWeather, type Source } from "../data/useWeather"
-import { ISS_EVERY_MS, fetchIssTle, type IssTle } from "../data/iss"
+import { ISS_EVERY_MS, fetchIssTle, parseIssTle, type IssTle } from "../data/iss"
 import { dayStartOf, songOfDay } from "../data/songOfDay"
 import type { PlaceHit } from "../data/places"
 import { fetchPoint } from "../data/weather"
@@ -53,7 +53,7 @@ const readUnit = (): Unit => { try { return globalThis.localStorage?.getItem(UNI
 const readWind = (): boolean => { try { return globalThis.localStorage?.getItem(WIND_KEY) === "1" } catch { return false } }
 const ISS_KEY = "weather-globe:iss-on"
 const readIss = (): boolean => { try { return globalThis.localStorage?.getItem(ISS_KEY) !== "0" } catch { return true } }
-const ISS_SOURCE: Source<IssTle> = { key: "weather-globe:iss-tle:v1", everyMs: ISS_EVERY_MS, read: fetchIssTle }
+const ISS_SOURCE: Source<IssTle> = { key: "weather-globe:iss-tle:v1", everyMs: ISS_EVERY_MS, read: fetchIssTle, valid: (v) => parseIssTle(v) != null }
 /** a country found comes this close, a place found this close */
 const COUNTRY_ZOOM = 1.8
 const PLACE_ZOOM = 3.2

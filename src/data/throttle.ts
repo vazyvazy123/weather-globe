@@ -82,13 +82,18 @@ export async function trimCache(cacheName: string, keep: number): Promise<void> 
 
 interface Stored<T> { atMs: number; value: T }
 
-/** A JSON value kept in localStorage, with the time it was stored; null when absent or unreadable. */
-export function stored<T>(key: string): Stored<T> | null {
+/** a value stored later than this after now (by a clock that was ahead) is not trusted: it would look fresh for ever */
+const CLOCK_SLACK_MS = 60_000
+
+/** A JSON value kept in localStorage, with the time it was stored; null when absent, unreadable, stored in the future,
+ *  or not what `valid` asks for (an old or damaged entry). */
+export function stored<T>(key: string, valid?: (v: unknown) => boolean): Stored<T> | null {
   try {
     const raw = globalThis.localStorage?.getItem(key)
     if (!raw) return null
-    const v = JSON.parse(raw) as Partial<Stored<T>>
-    return typeof v.atMs === "number" && v.value !== undefined ? { atMs: v.atMs, value: v.value as T } : null
+    const v = JSON.parse(raw) as Partial<Stored<unknown>>
+    if (typeof v.atMs !== "number" || v.value === undefined || v.atMs > Date.now() + CLOCK_SLACK_MS) return null
+    return valid && !valid(v.value) ? null : { atMs: v.atMs, value: v.value as T }
   } catch {
     return null
   }

@@ -219,6 +219,7 @@ a { color: var(--ink-2); }
 .info-card ul:last-child { margin-bottom: 0; }
 .info-card li { margin: 3px 0; }
 .info-card a { color: var(--ink-1); }
+.info-card .info-privacy { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-4); }
 /* the bottom left: only what went wrong, and the wind's scale while it shows */
 .caption { right: auto; max-width: calc(100% - 140px); }
 .toast { align-self: flex-start; padding: 5px 10px; border-radius: 10px; background: rgba(8, 11, 32, 0.86); }

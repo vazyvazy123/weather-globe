@@ -19,7 +19,13 @@ export interface WeatherState {
   error: string | null
 }
 
-export interface Source<T> { key: string; everyMs: number; read: () => Promise<T> }
+export interface Source<T> {
+  key: string
+  everyMs: number
+  read: () => Promise<T>
+  /** whether a stored copy is one (an old or damaged one is left unread, and read again) */
+  valid?: (v: unknown) => boolean
+}
 
 interface Fresh<T> { value: T | null; atMs: number | null; error: string | null }
 
@@ -37,7 +43,7 @@ function readOnce<T>(src: Source<T>): Promise<T> {
 /** A value kept fresh: the stored copy at once, a new read when it is due — while `on` (nothing is read while off). */
 export function useFresh<T>(src: Source<T>, on = true): Fresh<T> {
   const [state, setState] = useState((): Fresh<T> => {
-    const s = stored<T>(src.key)
+    const s = stored<T>(src.key, src.valid)
     return { value: s ? s.value : null, atMs: s ? s.atMs : null, error: null }
   })
   useEffect(() => {
@@ -45,7 +51,7 @@ export function useFresh<T>(src: Source<T>, on = true): Fresh<T> {
     let live = true, busy = false, triedAt = 0
     const tick = () => {
       if (busy || document.hidden) return
-      const now = Date.now(), held = stored<T>(src.key)
+      const now = Date.now(), held = stored<T>(src.key, src.valid)
       if (held && now - held.atMs < src.everyMs) return
       if (now - triedAt < RETRY_MS) return
       busy = true

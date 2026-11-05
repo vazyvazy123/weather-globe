@@ -21,11 +21,11 @@ export function parseGeocode(body: unknown): PlaceHit[] {
     if (r == null || typeof r !== "object") return []
     const o = r as Record<string, unknown>
     const name = text(o.name), lat = num(o.latitude), lon = num(o.longitude)
-    // countries (GeoNames' political entities, PCL…) are left out: the globe lists its own
-    if (!name || lat == null || lon == null || /^PCL/.test(text(o.feature_code) ?? "")) return []
+    // countries (GeoNames' political entities, PCL…) are left out: the globe lists its own; so is a place off the Earth
+    if (!name || lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180 || /^PCL/.test(text(o.feature_code) ?? "")) return []
     const detail = [text(o.admin1), text(o.country)].filter((s) => s != null && s !== name).join(", ")
     return [{ kind: "place", key: String(o.id ?? `${lat},${lon}`), name, detail, lat, lon }]
-  })
+  }).slice(0, COUNT)
 }
 
 /** The places a name may mean; stopped when `signal` aborts (the typing went on) or after TIMEOUT_MS. */

@@ -72,6 +72,16 @@ describe("geocoding", () => {
     expect(parseGeocode({})).toEqual([])
   })
 
+  test("keeps at most the six places asked for, each somewhere on the Earth", () => {
+    const results = [
+      { id: 0, name: "Off the map", latitude: 95, longitude: 10 },
+      { id: 1, name: "Nor here", latitude: 10, longitude: 200 },
+      ...Array.from({ length: 10 }, (_, k) => ({ id: k + 2, name: `Place ${k}`, latitude: k, longitude: k })),
+    ]
+    const hits = parseGeocode({ results })
+    expect(hits.map((h) => h.name)).toEqual(["Place 0", "Place 1", "Place 2", "Place 3", "Place 4", "Place 5"])
+  })
+
   test("countries are left out (the globe lists its own)", () => {
     expect(parseGeocode({ results: [{ id: 5, name: "France", latitude: 46, longitude: 2, feature_code: "PCLI", country: "France" }] })).toEqual([])
   })

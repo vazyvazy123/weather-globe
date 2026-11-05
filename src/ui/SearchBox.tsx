@@ -84,7 +84,7 @@ export function SearchBox({ onPick }: { onPick: (hit: PlaceHit) => void }) {
       <Glass />
       <div className="search-field">
         <span className="search-ghost" aria-hidden="true"><span className="typed">{text}</span>{ghost}</span>
-        <input ref={inputRef} type="text" value={text} placeholder="Search places" aria-label="Search places" spellCheck={false} autoComplete="off"
+        <input ref={inputRef} type="text" value={text} placeholder="Search places" aria-label="Search places" spellCheck={false} autoComplete="off" maxLength={100}
           enterKeyHint="go" role="combobox" aria-expanded={listed} aria-controls={listId} aria-autocomplete="both"
           aria-activedescendant={listed ? `${listId}-${active}` : undefined}
           onChange={(e) => { setText(e.target.value); setOpen(true) }} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onKeyDown={onKeyDown} />

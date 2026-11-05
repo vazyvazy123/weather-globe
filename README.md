@@ -186,19 +186,25 @@ is published, Blue Marble tiles are kept in the browser's Cache Storage, tile re
 | **wheretheiss.at** — [API](https://wheretheiss.at/w/developer) | the ISS's orbital elements (TLE), every 6 h while the ISS is shown | Free, no key; 350 requests per 5 minutes. The orbit itself is worked out on the page. |
 | **Deezer** — [API](https://developers.deezer.com/api) | singers' photos | Deezer's [terms](https://www.deezer.com/legal/cgu). Fetched once by `npm run music`; the page loads the photo files only. |
 
-### Hosting the music
+### Hosting it
 
-The player loads audio from `https://audio-ssl.itunes.apple.com`, covers from `https://*.mzstatic.com` and photos from
-`https://cdn-images.dzcdn.net`. A server that sends a Content-Security-Policy must allow them, and should allow
-autoplay for its own page so a song can follow the last one, for example:
+`npm run build` writes a static site to `dist/`; any web server can serve it. The headers it should be served with are
+in [`public/_headers`](public/_headers) (Netlify reads that file as it is; other servers should send the same), and
+`test/csp.test.ts` checks that its Content-Security-Policy lets the page reach every host it uses. A server with a
+stricter policy breaks parts of the page without an error: the place search needs `https://geocoding-api.open-meteo.com`
+and the ISS `https://api.wheretheiss.at` in `connect-src`; the player needs `https://audio-ssl.itunes.apple.com` in
+`media-src`, `https://*.mzstatic.com` and `https://cdn-images.dzcdn.net` in `img-src`, and `autoplay=(self)` in the
+Permissions-Policy so a song can follow the last one:
 
 ```
-Content-Security-Policy: … img-src 'self' data: https://*.mzstatic.com https://cdn-images.dzcdn.net; media-src https://audio-ssl.itunes.apple.com; …
-Permissions-Policy: autoplay=(self), …
+Content-Security-Policy: default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self' https://*.mzstatic.com https://cdn-images.dzcdn.net https://e-cdns-images.dzcdn.net; media-src https://audio-ssl.itunes.apple.com; font-src 'self'; connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.wheretheiss.at https://gibs.earthdata.nasa.gov https://nowcoast.noaa.gov; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; upgrade-insecure-requests
+Permissions-Policy: accelerometer=(), autoplay=(self), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), usb=(), browsing-topics=()
 ```
 
-Without them the globe works as before; the player says when a song cannot load and asks for a click when the browser
-holds a song back.
+The files under `/assets/` are named by their contents, so they can be cached for a year (`Cache-Control: public,
+max-age=31536000, immutable`) — but only when they exist: a 404 cached that way would outlast the next deploy. The page
+itself (`index.html`) should be revalidated on each visit (`Cache-Control: no-cache`). Deploy the assets before
+`index.html`.
 
 The page shows these credits in its caption. If you fork this project, keep them.
 
