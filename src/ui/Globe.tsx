@@ -83,8 +83,8 @@ const DPR_STEP = 0.25
 const MOVING_MS = 100
 /** the ISS's path drawn behind it and ahead of it (minutes), a point every ISS_TRACK_STEP_MS, worked out afresh every
  *  ISS_TRACK_EVERY_MS */
-const ISS_PAST_MIN = 25
-const ISS_NEXT_MIN = 95
+const ISS_PAST_MIN = 10
+const ISS_NEXT_MIN = 45
 const ISS_TRACK_STEP_MS = 40_000
 const ISS_TRACK_EVERY_MS = 60_000
 /** the ISS crosses the globe this fast (rad/s: once round in ~93 minutes); it is moved on when it has gone ISS_STEP_PX on
@@ -323,8 +323,8 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     }
     past.setAttribute("d", path([...tr.pts.filter((q) => q.tMs < now), here], aloft))
     next.setAttribute("d", path([here, ...tr.pts.filter((q) => q.tMs > now)], aloft))
-    // the ground its crew can see: within the horizon from its height
-    foot.setAttribute("d", path(smallCircle(here.lat, here.lon, Math.acos(1 / k), ISS_FOOT_STEPS), at, true))
+    // the ground its crew can see (within the horizon from its height), while it is chosen
+    foot.setAttribute("d", d.issSelected ? path(smallCircle(here.lat, here.lon, Math.acos(1 / k), ISS_FOOT_STEPS), at, true) : "")
     const p = aloft(here.lat, here.lon), gp = at(here.lat, here.lon)
     g.style.display = p ? "" : "none"
     ground.style.display = gp ? "" : "none"

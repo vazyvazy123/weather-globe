@@ -12,6 +12,8 @@ import type { PlaceHit } from "../data/places"
 import { fetchPoint } from "../data/weather"
 import { issAt, parseTle } from "../geo/orbit"
 import { SearchBox } from "./SearchBox"
+import { Menu } from "./Menu"
+import { InfoPanel } from "./InfoPanel"
 import { IssPanel, RIDE_SPEED, type FollowMode } from "./IssPanel"
 import { useWind, type WindState } from "../data/useWind"
 import { WIND_PARTS } from "../data/wind"
@@ -39,7 +41,7 @@ const UNIT_KEY = "weather-globe:unit"
 const WIND_KEY = "weather-globe:wind-on"
 /** the wind shown is the forecast's for the present, taken afresh this often */
 const WIND_FRAME_MS = 5 * 60_000
-const CAPTION_PX = 64
+const CAPTION_PX = 44
 /** a city clicked or played comes at least this close */
 const CITY_ZOOM = 2.4
 const MUSIC_ZOOM = 2
@@ -63,6 +65,7 @@ type FoundPlace = Extract<PlaceHit, { kind: "place" }>
 const degrees = (c: number, unit: Unit): number => Math.round(unit === "F" ? cToF(c) : c)
 const tempText = (c: number, unit: Unit): string => `${degrees(c, unit)}°${unit}`
 const utcTime = (ms: number): string => new Date(ms).toISOString().slice(11, 16) + " UTC"
+const utcDay = (ms: number): string => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC"
 /** a city's local clock time from its UTC offset */
 const localTime = (nowMs: number, offsetS: number): string => new Date(nowMs + offsetS * 1000).toISOString().slice(11, 16)
 
@@ -134,6 +137,7 @@ export function App() {
   const [dockRef, dockBox] = useBox()
   const [panelRef, panelBox] = useBox()
   const [searchRef, searchBox] = useBox()
+  const [cornerRef, cornerBox] = useBox()
 
   const weather = useWeather()
   const sat = useSatellite(showClouds)
@@ -260,25 +264,37 @@ export function App() {
   const showDock = musicMode || music.track != null
   const issPanel = issOpen && issLive != null
   const panelShown = issPanel || city != null || pin != null
-  const avoid = useMemo(() => [...grow(showDock ? dockBox : null, PANEL_MARGIN_PX), ...grow(panelShown ? panelBox : null, PANEL_MARGIN_PX), ...grow(searchBox, PANEL_MARGIN_PX)],
-    [showDock, dockBox, panelShown, panelBox, searchBox])
+  const avoid = useMemo(() => [...grow(showDock ? dockBox : null, PANEL_MARGIN_PX), ...grow(panelShown ? panelBox : null, PANEL_MARGIN_PX), ...grow(searchBox, PANEL_MARGIN_PX),
+    ...grow(cornerBox, PANEL_MARGIN_PX)], [showDock, dockBox, panelShown, panelBox, searchBox, cornerBox])
+  // what each layer shows now (in the ⓘ card), and what went wrong (small notes at the bottom left)
+  const status = [
+    gpu !== false && showClouds ? satCaption(sat) : null,
+    windOn ? windCaption(wind, windFrame != null, now) : null,
+    detailLine,
+    showIss && issLive ? `The ISS: placed from its orbital elements of ${utcDay(issLive.epochMs)}` : null,
+  ].filter((s): s is string => s != null)
+  const warnings = [
+    gpu === false ? "WebGL2 is unavailable: showing the plain outline globe." : null,
+    weather.error ? `Weather: ${weather.error}` : null,
+    windOn && !windFrame && wind.error && wind.reading == null ? `Wind: forecast unavailable (${wind.error})` : null,
+    showIss && !issLive && issTle.error ? `ISS: its orbit could not be read (${issTle.error})` : null,
+  ].filter((s): s is string => s != null)
 
   return (
     <div className="app">
       <header className="bar">
         <h1>Weather Globe</h1>
         <nav className="tools" aria-label="Globe controls">
-          {REGIONS.map(([name, cam]) => <button key={name} type="button" className="chip" onClick={() => controller.flyTo(cam)}>{name}</button>)}
+          <Menu label="Regions" title="Fly to a part of the world" items={REGIONS.map(([name, cam]) => ({ key: name, label: name, onSelect: () => controller.flyTo(cam) }))} />
           <button type="button" className={`chip${touring ? " on" : ""}`} aria-pressed={touring} onClick={() => controller.setTouring(!touring)}>Tour</button>
           <button ref={musicChip} type="button" className={`chip chip-music${musicMode ? " on" : ""}`} aria-pressed={musicMode} onClick={() => setMusicMode((v) => !v)}
             title="Songs from around the world">♪ Music</button>
-          <button type="button" className={`chip${showClouds ? " on" : ""}`} aria-pressed={showClouds} onClick={() => setShowClouds((v) => !v)} disabled={gpu === false}>Clouds</button>
-          <button type="button" className={`chip${showWind ? " on" : ""}`} aria-pressed={showWind} onClick={switchWind} disabled={gpu === false}
-            title="The wind near the ground, from the weather forecast">Wind</button>
-          <button type="button" className={`chip${showIss ? " on" : ""}`} aria-pressed={showIss} onClick={switchIss} title="The International Space Station, live">ISS</button>
+          <Menu label="Layers" title="What the globe shows" items={[
+            { key: "clouds", label: "Clouds", checked: showClouds && gpu !== false, disabled: gpu === false, onSelect: () => setShowClouds((v) => !v) },
+            { key: "wind", label: "Wind", checked: showWind && gpu !== false, disabled: gpu === false, onSelect: switchWind },
+            { key: "iss", label: "The ISS", checked: showIss, onSelect: switchIss },
+          ]} />
           <button type="button" className="chip" onClick={switchUnit} aria-label={`Show temperatures in °${unit === "C" ? "F" : "C"}`}>°{unit}</button>
-          <button type="button" className="chip" aria-label="Zoom in" onClick={() => controller.set(zoomed(controller.camera, 1.5))}>+</button>
-          <button type="button" className="chip" aria-label="Zoom out" onClick={() => controller.set(zoomed(controller.camera, 1 / 1.5))}>−</button>
         </nav>
       </header>
       <main className={`stage${musicMode ? " music-mode" : ""}`}>
@@ -314,25 +330,16 @@ export function App() {
         ) : null}
         {showDock && <MusicDock music={music} place={place} onClose={closeMusic} onFind={findCity} boxRef={dockRef} daySong={dayPick?.track ?? null} />}
         <footer className="caption">
-          {gpu === false && <div>WebGL2 is unavailable: showing the plain outline globe.</div>}
-          {gpu !== false && showClouds && <div>{satCaption(sat)}</div>}
-          {windOn && <div className="wind-line">{windCaption(wind, windFrame != null, now)}{windFrame && <WindLegend unit={unit} />}</div>}
-          {detailLine && <div>{detailLine}</div>}
-          {weather.error && <div className="warn">Weather: {weather.error}</div>}
-          {showIss && !issLive && (
-            <div className={issTle.error ? "warn" : undefined}>
-              {issTle.error ? `ISS: its orbit could not be read (${issTle.error})` : issEl ? "ISS: its orbit is out of date; reading it again…" : "ISS: reading its orbit…"}
-            </div>
-          )}
-          <div className="credit">
-            Imagery: <a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noopener noreferrer">NASA EOSDIS GIBS</a> ·{" "}
-            <a href="https://nowcoast.noaa.gov/" target="_blank" rel="noopener noreferrer">NOAA nowCOAST</a> · Weather data by{" "}
-            <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a> (CC BY 4.0) · Land:{" "}
-            <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a>
-            {showIss && <> · ISS: <a href="https://wheretheiss.at/" target="_blank" rel="noopener noreferrer">wheretheiss.at</a></>}
-            {showDock && <> · Music previews: <a href="https://www.apple.com/apple-music/" target="_blank" rel="noopener noreferrer">Apple Music</a>, photos: Deezer</>}
-          </div>
+          {warnings.map((w) => <div key={w} className="toast warn">{w}</div>)}
+          {windOn && windFrame && <WindLegend unit={unit} />}
         </footer>
+        <div ref={cornerRef} className="corner">
+          <div className="zoom" role="group" aria-label="Zoom">
+            <button type="button" className="zoom-button" aria-label="Zoom in" onClick={() => controller.set(zoomed(controller.camera, 1.5))}>+</button>
+            <button type="button" className="zoom-button" aria-label="Zoom out" onClick={() => controller.set(zoomed(controller.camera, 1 / 1.5))}>−</button>
+          </div>
+          <InfoPanel status={status} showIss={showIss} showMusic={showDock} />
+        </div>
       </main>
     </div>
   )
