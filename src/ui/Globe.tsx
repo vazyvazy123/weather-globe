@@ -9,6 +9,7 @@ import { chipWidth, pillBox, pillWidth, placeLabels, type LabelBox, type LabelSi
 import { spreadMarkers } from "../globe/declutter"
 import { tempColor } from "../globe/tempColor"
 import { clampLat, reducedMotion, wrapLon, zoomed, type GlobeCamera, type GlobeCameraController } from "../globe/camera"
+import { pinchFactor, pinched, spread, type Point } from "../globe/gesture"
 import type { SatField } from "../globe/satClouds"
 import { DetailLoader, type DetailStatus } from "../globe/detail"
 import type { TileFetcher } from "../data/tileFetcher"
@@ -63,6 +64,8 @@ export interface GlobeCity {
 /** the globe's radius at zoom 1, as a share of the frame's smaller side (room left for the atmosphere) */
 const FIT = 0.46
 const DRAG_START_PX = 4
+/** a finger drifts more than a mouse in a tap */
+const TOUCH_DRAG_START_PX = 10
 /** the ring's radius on the ground, as it shows face-on (px) */
 const MARKER_PX = 4.2
 /** markers closer than this crowd each other: the less important one is not shown */
@@ -612,20 +615,65 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     return () => el.removeEventListener("wheel", onWheel)
   }, [controller])
 
+  // one finger (or the mouse) turns the globe; a second makes it a pinch, which zooms it (gesture.ts) until a finger
+  // lifts, the one left then turning it on once it moves as far as a drag
   const drag = useRef<{ x: number; y: number; camera: GlobeCamera; moved: boolean } | null>(null)
+  const touches = useRef(new Map<number, Point>())
+  const pinch = useRef<{ spread: number; zoom: number } | null>(null)
+  /** this gesture has been a pinch: lifting its fingers opens no city under them */
+  const pinchedNow = useRef(false)
   const [dragging, setDragging] = useState(false)
-  const onDown = (ev: React.PointerEvent<HTMLDivElement>) => { if (ev.button === 0) drag.current = { x: ev.clientX, y: ev.clientY, camera: controller.camera, moved: false } }
+  const pair = (): [Point, Point] | null => {
+    const [a, b] = touches.current.values()
+    return a && b ? [a, b] : null
+  }
+  const capture = (el: HTMLDivElement, id: number) => {
+    // a touch that ended unseen can no longer be captured: it is forgotten
+    try { if (!el.hasPointerCapture(id)) el.setPointerCapture(id) } catch { touches.current.delete(id) }
+  }
+  const startPinch = (el: HTMLDivElement) => {
+    for (const id of [...touches.current.keys()]) capture(el, id)
+    const p = pair()
+    if (!p) return
+    pinch.current = { spread: spread(...p), zoom: controller.camera.zoom }
+    pinchedNow.current = true
+    setDragging(true)
+  }
+  const onDown = (ev: React.PointerEvent<HTMLDivElement>) => {
+    if (ev.button !== 0) return
+    // the first touch of a new gesture: any touch still listed has ended out of sight
+    if (ev.isPrimary) { touches.current.clear(); pinch.current = null; pinchedNow.current = false }
+    touches.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY })
+    if (touches.current.size >= 2) startPinch(ev.currentTarget)
+    else drag.current = { x: ev.clientX, y: ev.clientY, camera: controller.camera, moved: false }
+  }
   const onMove = (ev: React.PointerEvent<HTMLDivElement>) => {
+    if (touches.current.has(ev.pointerId)) touches.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY })
+    const pn = pinch.current
+    if (pn) {
+      // the zoom alone, the globe left where it is now: a follow of the ISS goes on under the fingers
+      const p = pair()
+      if (p) controller.set(pinched(controller.camera, pn.zoom, pinchFactor(pn.spread, spread(...p))))
+      return
+    }
     const dr = drag.current
     if (!dr || ev.buttons === 0) return
-    if (!dr.moved && Math.hypot(ev.clientX - dr.x, ev.clientY - dr.y) < DRAG_START_PX) return
+    const slop = ev.pointerType === "mouse" ? DRAG_START_PX : TOUCH_DRAG_START_PX
+    if (!dr.moved && Math.hypot(ev.clientX - dr.x, ev.clientY - dr.y) < slop) return
     // the pointer is captured only once a drag starts: a plain click still reaches the city under it
-    if (!dr.moved) { dr.moved = true; setDragging(true); ev.currentTarget.setPointerCapture(ev.pointerId) }
+    if (!dr.moved) { dr.moved = true; setDragging(true); capture(ev.currentTarget, ev.pointerId) }
     const degPerPx = 180 / Math.PI / (FIT * Math.min(w, h) * dr.camera.zoom)
     controller.set({ ...dr.camera, lon: wrapLon(dr.camera.lon - (ev.clientX - dr.x) * degPerPx), lat: clampLat(dr.camera.lat + (ev.clientY - dr.y) * degPerPx) })
   }
   const onUp = (ev: React.PointerEvent<HTMLDivElement>) => {
+    touches.current.delete(ev.pointerId)
     if (ev.currentTarget.hasPointerCapture(ev.pointerId)) ev.currentTarget.releasePointerCapture(ev.pointerId)
+    if (pinch.current) {
+      if (touches.current.size >= 2) { startPinch(ev.currentTarget); return }
+      pinch.current = null
+      const [rest] = touches.current.values()
+      if (rest) { drag.current = { ...rest, camera: controller.camera, moved: false }; return }
+    }
     setDragging(false)
     // a click that never turned the globe still reaches the city under it
     setTimeout(() => { drag.current = null }, 0)
@@ -640,11 +688,11 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     const m = k[ev.key]
     if (m) move({ ...cam, lon: wrapLon(cam.lon + m[0]), lat: clampLat(cam.lat + m[1]) })
   }
-  const open = (id: string) => { if (!drag.current?.moved) onCity(id) }
+  const open = (id: string) => { if (!drag.current?.moved && !pinchedNow.current) onCity(id) }
 
   return (
     <div ref={stageRef} className={`globe-stage${dragging ? " dragging" : ""}`} role="application" tabIndex={0}
-      aria-label="Globe — drag or use the arrow keys to turn it, scroll or + / − to zoom; Tab moves between the labelled cities"
+      aria-label="Globe — drag or use the arrow keys to turn it, pinch, scroll or + / − to zoom; Tab moves between the labelled cities"
       onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onKeyDown={onKey}>
       <canvas ref={canvasRef} className="globe-gl" width={Math.max(1, Math.round(w * dpr))} height={Math.max(1, Math.round(h * dpr))} style={{ width: w, height: h }} />
       <canvas ref={windRef} className="globe-wind" width={Math.max(1, Math.round(w * dpr))} height={Math.max(1, Math.round(h * dpr))}

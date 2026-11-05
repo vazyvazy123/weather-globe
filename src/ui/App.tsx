@@ -138,6 +138,7 @@ export function App() {
   const [panelRef, panelBox] = useBox()
   const [searchRef, searchBox] = useBox()
   const [cornerRef, cornerBox] = useBox()
+  const [zoomRef, zoomBox] = useBox()
 
   const weather = useWeather()
   const sat = useSatellite(showClouds)
@@ -282,7 +283,7 @@ export function App() {
   const issPanel = issOpen && issLive != null
   const panelShown = issPanel || city != null || pin != null
   const avoid = useMemo(() => [...grow(showDock ? dockBox : null, PANEL_MARGIN_PX), ...grow(panelShown ? panelBox : null, PANEL_MARGIN_PX), ...grow(searchBox, PANEL_MARGIN_PX),
-    ...grow(cornerBox, PANEL_MARGIN_PX)], [showDock, dockBox, panelShown, panelBox, searchBox, cornerBox])
+    ...grow(cornerBox, PANEL_MARGIN_PX), ...grow(zoomBox, PANEL_MARGIN_PX)], [showDock, dockBox, panelShown, panelBox, searchBox, cornerBox, zoomBox])
   // what each layer shows now (in the ⓘ card), and what went wrong (small notes at the bottom left)
   const status = [
     gpu !== false && showClouds ? satCaption(sat) : null,
@@ -304,7 +305,7 @@ export function App() {
         <button ref={musicChip} type="button" className={`chip chip-music${musicMode ? " on" : ""}`} aria-pressed={musicMode} onClick={() => setMusicMode((v) => !v)}
           title="Songs from around the world">♪ Music</button>
         <nav className="tools" aria-label="Globe controls">
-          <Menu label="Regions" title="Fly to a part of the world" items={REGIONS.map(([name, cam]) => ({ key: name, label: name, onSelect: () => controller.flyTo(cam) }))} />
+          <Menu label="Regions" title="Fly to a part of the world" align="start" items={REGIONS.map(([name, cam]) => ({ key: name, label: name, onSelect: () => controller.flyTo(cam) }))} />
           <button type="button" className={`chip${touring ? " on" : ""}`} aria-pressed={touring} title="Turn the globe slowly"
             onClick={() => { tourAsked.current = !touring; controller.setTouring(!touring) }}>Globe</button>
           <button type="button" className={`chip${followMode ? " on" : ""}`} aria-pressed={followMode != null} title="Ride along with the International Space Station"
@@ -317,11 +318,16 @@ export function App() {
           <button type="button" className="chip" onClick={switchUnit} aria-label={`Show temperatures in °${unit === "C" ? "F" : "C"}`}>°{unit}</button>
         </nav>
       </header>
-      <main className={`stage${musicMode ? " music-mode" : ""}`}>
+      <main className={`stage${musicMode ? " music-mode" : ""}${panelShown ? " panel-open" : ""}`}>
         <Globe cities={cities} clouds={weather.grid} satellite={showClouds ? satellite : null} selected={selected} onCity={onCity}
           controller={controller} showClouds={showClouds && gpu !== false} tiles={tiles} onGpu={setGpu} onDetail={setDetail} reserveBottom={CAPTION_PX}
           musicMode={musicMode} playing={trackCity} avoid={avoid} wind={windFrame} pin={pinMark} iss={showIss ? issLive : null} issSelected={issOpen} onIss={openIss} issClock={issClock} />
         <div ref={searchRef} className="stage-search"><SearchBox onPick={onPick} /></div>
+        {/* beside the search on a phone, so next to it for Tab too */}
+        <div ref={zoomRef} className="zoom" role="group" aria-label="Zoom">
+          <button type="button" className="zoom-button" aria-label="Zoom in" onClick={() => controller.set(zoomed(controller.camera, 1.5))}>+</button>
+          <button type="button" className="zoom-button" aria-label="Zoom out" onClick={() => controller.set(zoomed(controller.camera, 1 / 1.5))}>−</button>
+        </div>
         {issPanel ? (
           <IssPanel el={issLive} pick={dayPick} unit={unit} music={music} mode={followMode} clock={issClock} onFollow={follow}
             onFly={findCity} onClose={() => { setIssOpen(false); follow(null) }} boxRef={panelRef} />
@@ -354,10 +360,6 @@ export function App() {
           {windOn && windFrame && <WindLegend unit={unit} />}
         </footer>
         <div ref={cornerRef} className="corner">
-          <div className="zoom" role="group" aria-label="Zoom">
-            <button type="button" className="zoom-button" aria-label="Zoom in" onClick={() => controller.set(zoomed(controller.camera, 1.5))}>+</button>
-            <button type="button" className="zoom-button" aria-label="Zoom out" onClick={() => controller.set(zoomed(controller.camera, 1 / 1.5))}>−</button>
-          </div>
           <InfoPanel status={status} showIss={showIss} showMusic={showDock} />
         </div>
       </main>

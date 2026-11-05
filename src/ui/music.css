@@ -194,9 +194,16 @@
 @media (max-height: 760px) { .dock-deck { max-width: 230px; margin-top: 10px; } }
 @media (max-height: 640px) { .dock-deck { display: none; } }
 @media (max-width: 640px) {
-  .dock { left: 8px; right: 8px; bottom: 70px; width: auto; max-width: none; padding: 12px 12px 10px; }
+  /* just above the credits (styles.css), over the notes and the wind's scale while it plays; out of the way (and of
+     Tab) while a city's sheet takes its place, which has its own songs */
+  .dock { left: 8px; right: 8px; bottom: 42px; width: auto; max-width: none; padding: 12px 12px 10px; }
+  .panel-open .dock { visibility: hidden; }
   .dock.folded { width: auto; }
   .dock-deck { max-width: 210px; }
   .dock-now { grid-template-columns: 64px 1fr; }
   .dock-cover { width: 64px; height: 64px; }
+}
+/* a phone on its side: the player at the bottom left as on a computer, clear of the zoom at the bottom right */
+@media (max-height: 500px) and (orientation: landscape) {
+  .dock { left: 16px; right: auto; bottom: 72px; width: 360px; max-width: calc(100% - 80px); }
 }

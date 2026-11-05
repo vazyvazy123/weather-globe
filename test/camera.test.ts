@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { GlobeCameraController, ZOOM_MAX, ZOOM_MIN, cameraBetween, clampLat, wrapLon, zoomed } from "../src/globe/camera"
+import { pinched } from "../src/globe/gesture"
 
 describe("camera math", () => {
   test("wrapLon keeps longitudes in [-180, 180)", () => {
@@ -100,6 +101,22 @@ describe("following a moving target, and the tour's pace", () => {
     run(1080)
     expect(c.following).toBe(true)
     expect(c.camera).toEqual({ lon: 61, lat: 10, zoom: 4 })
+  })
+
+  test("a pinch keeps the follow going too, the target moving on under the fingers", () => {
+    const c = new GlobeCameraController({ lon: 0, lat: 0, zoom: 1 })
+    let lon = 50
+    c.follow(() => ({ lon, lat: 10 }), 2)
+    run(0); run(400); run(1000)
+    const start = c.camera.zoom
+    // the station moves on between the fingers touching and their moving apart
+    lon = 55
+    run(1040)
+    c.set(pinched(c.camera, start, 1.5))
+    lon = 58
+    run(1080)
+    expect(c.following).toBe(true)
+    expect(c.camera).toEqual({ lon: 58, lat: 10, zoom: start * 1.5 })
   })
 
   test("a zoom of the user's own while it eases on is kept", () => {

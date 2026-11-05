@@ -92,8 +92,8 @@ npm run dev
 ```
 
 Then open the printed local address (usually http://localhost:5173). The globe opens turning slowly (still, if you
-prefer reduced motion); drag to turn it yourself, scroll or use the `+` / `−` at its bottom right to zoom, the arrow keys
-to move, and click a city for its details. Press `/` (or click the box at the top left) to find a place, and click the
+prefer reduced motion); drag to turn it yourself, pinch, scroll or use the `+` / `−` at its bottom right (top right on a
+phone) to zoom, the arrow keys to move, and click a city for its details (on a phone they open as a sheet at the bottom). Press `/` (or click the box at the top left) to find a place, and click the
 ISS for where it is and the song of the day. ♪ Music, in the middle of the top bar, turns on the music. Beside it, the
 Regions menu flies to a part of the world; Globe starts or stops the turning; ISS rides along with the station on its
 time-lapse (the globe turning beneath it); the Layers menu toggles the clouds, the wind and the ISS; and °F / °C
@@ -132,6 +132,7 @@ src/
   globe/      the renderer and its pipelines
     globeGl.ts      WebGL2 renderer: the frame shader and the cloud-map bake shader
     camera.ts       camera state outside React (drag, zoom, fly-to, tour)
+    gesture.ts      a two-finger pinch's zoom
     detail.ts       zoom-in detail: visible box, the land's tiles as the view moves, fetch queue, worker builds
     detailWorker.ts IR tiles → temperatures → cloud fine structure; visible tiles → clouds (off the main thread)
     irDecode.ts     NASA GIBS band-13 colour map inverted to °C; fine-structure filter

@@ -13,7 +13,9 @@ export interface MenuItem {
   onSelect: () => void
 }
 
-export function Menu({ label, items, title, active = false }: { label: ReactNode; items: readonly MenuItem[]; title?: string; active?: boolean }) {
+/** `align`: the side of its chip the list lines up with ("start" for a chip at the start of a row, so the list stays on screen) */
+export function Menu({ label, items, title, active = false, align = "end" }:
+  { label: ReactNode; items: readonly MenuItem[]; title?: string; active?: boolean; align?: "start" | "end" }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null), buttonRef = useRef<HTMLButtonElement>(null), listRef = useRef<HTMLDivElement>(null)
   const id = useId()
@@ -50,7 +52,7 @@ export function Menu({ label, items, title, active = false }: { label: ReactNode
         {label} <span className="caret" aria-hidden="true">▾</span>
       </button>
       {open && (
-        <div ref={listRef} id={id} role="menu" className="menu-list" onKeyDown={onKeyDown}>
+        <div ref={listRef} id={id} role="menu" className={`menu-list ${align}`} onKeyDown={onKeyDown}>
           {items.map((it) => (
             <button key={it.key} type="button" role={it.checked === undefined ? "menuitem" : "menuitemcheckbox"} aria-checked={it.checked} disabled={it.disabled}
               className="menu-item" onClick={() => { it.onSelect(); if (it.checked === undefined) { setOpen(false); buttonRef.current?.focus() } }}>
