@@ -107,6 +107,7 @@ npm test            # vitest unit tests
 npm run build       # production build into dist/
 npm run preview     # serve the production build locally
 npm run music       # resolve scripts/music-picks.json into src/data/musicCatalog.json (needs network)
+node scripts/pack-land.mjs   # pack src/geo/worldLandFine.ts into src/geo/worldLandFine.bin, the coastline the page fetches
 ```
 
 ### Adding a song
@@ -126,7 +127,8 @@ A WebGL2-capable browser is needed for the full globe; without it a plain SVG ou
 ```
 src/
   geo/        pure geometry and data: orthographic projection, sun position, WMO sky codes,
-              the GIBS tile grid, Natural Earth land rings
+              the GIBS tile grid, Natural Earth land rings (the fine ones packed into worldLandFine.bin, a third
+              of their size as code: packedLand.ts reads them)
   globe/      the renderer and its pipelines
     globeGl.ts      WebGL2 renderer: the frame shader and the cloud-map bake shader
     camera.ts       camera state outside React (drag, zoom, fly-to, tour)
@@ -158,7 +160,7 @@ src/
     useWeather.ts, useSatellite.ts   React hooks that poll only while the page is visible
   ui/         React: App (toolbar, city panel, caption) and Globe (canvas + SVG markers + HTML labels);
               MusicDock + Cassette (the player), useMusic (the <audio> element), music.css
-scripts/      resolve-music.mjs: the hand-picked songs → the catalog
+scripts/      resolve-music.mjs: the hand-picked songs → the catalog; pack-land.mjs: the fine coastline → its packed file
 test/         vitest unit tests for the pure modules
 ```
 

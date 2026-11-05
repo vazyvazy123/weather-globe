@@ -18,6 +18,8 @@
     <!-- the data hosts the first view reads from: connect early -->
     <link rel="preconnect" href="https://api.open-meteo.com" crossorigin />
     <link rel="preconnect" href="https://gibs.earthdata.nasa.gov" crossorigin />
+    <!-- the packed coastline, the largest download: fetched alongside the code, not after it (src/globe/landMask.ts) -->
+    <link rel="preload" href="/src/geo/worldLandFine.bin" as="fetch" crossorigin />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Weather Globe" />

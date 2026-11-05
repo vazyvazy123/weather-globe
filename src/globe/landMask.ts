@@ -2,8 +2,11 @@
 // Earth's 1:50m coastline: red = land, crisp; green = the land blurred a little (water near a coast), blue = blurred a lot
 // (how far inland a place is) — both drawn smaller and stretched, the blur being the costly part. A ring that crosses the
 // date line is unwrapped and drawn on both sides of it; one that circles a pole (Antarctica) is closed along that pole's
-// edge. The coastline is the largest part of the page's code: it is a file of its own, which main.tsx starts reading
-// first, so the page shows while it comes.
+// edge. The coastline is the page's largest download: packed small (src/geo/packedLand.ts), it is a file of its own that
+// index.html asks for alongside the code and main.tsx unpacks first, so the page shows while it comes.
+
+import { gunzip, unpackLand } from "../geo/packedLand"
+import packedLandUrl from "../geo/worldLandFine.bin?url"
 
 export const LAND_MASK_W = 4096
 export const LAND_MASK_H = 2048
@@ -82,9 +85,26 @@ function blurredLand(path: Path2D, scale: number, blurPx: number, colour: string
   return b
 }
 
-/** Drawn once per window (4096 × 2048; the blurred channels at a half and a quarter of that), once the coastline has come. */
+let fetched: Promise<number[][]> | null = null
+
+/** The fine coastline's rings, fetched and unpacked once (the file is already on its way: index.html asks for it). A
+ *  failure is not kept: the next ask fetches again. */
+export function landRings(): Promise<number[][]> {
+  fetched ??= fetch(packedLandUrl)
+    .then((res) => {
+      if (!res.ok) throw new Error(`the coastline answered HTTP ${res.status}`)
+      return res.arrayBuffer()
+    })
+    .then((file) => gunzip(new Uint8Array(file)))
+    .then(unpackLand)
+    .catch((err: unknown) => { fetched = null; throw err })
+  return fetched
+}
+
+/** Drawn once per window (4096 × 2048; the blurred channels at a half and a quarter of that), once the coastline has
+ *  come; tried again on the next ask if it did not. */
 export function landMask(): Promise<HTMLCanvasElement> {
-  cached ??= import("../geo/worldLandFine").then(({ WORLD_LAND_FINE }) => drawMask(WORLD_LAND_FINE))
+  cached ??= landRings().then(drawMask).catch((err: unknown) => { cached = null; throw err })
   return cached
 }
 
