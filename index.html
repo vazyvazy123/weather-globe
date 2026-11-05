@@ -3,11 +3,132 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A WebGL globe with live satellite infrared clouds, day and night, and city temperatures." />
-    <title>Weather Globe</title>
+    <title>Weather Globe: Live 3D Satellite Cloud Map &amp; ISS Tracker</title>
+    <meta name="description" content="Spin a 3D globe of Earth's weather now: live satellite clouds, day and night, wind, ~230 city temperatures, a live ISS tracker and world music." />
+    <link rel="canonical" href="https://weather-globe.salhi.com/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#04061a" />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- the data hosts the first view reads from: connect early -->
+    <link rel="preconnect" href="https://api.open-meteo.com" crossorigin />
+    <link rel="preconnect" href="https://gibs.earthdata.nasa.gov" crossorigin />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Weather Globe" />
+    <meta property="og:title" content="Weather Globe: a live 3D satellite weather map you can spin" />
+    <meta property="og:description" content="Real-time 3D Earth: satellite clouds, day and night, wind, city temperatures, the International Space Station and music from around the world." />
+    <meta property="og:url" content="https://weather-globe.salhi.com/" />
+    <meta property="og:image" content="https://weather-globe.salhi.com/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A 3D globe of Earth with satellite clouds, the line between day and night and city temperatures." />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Weather Globe: a live 3D satellite weather map you can spin" />
+    <meta name="twitter:description" content="Real-time 3D Earth: satellite clouds, day and night, wind, city temperatures, the ISS and world music." />
+    <meta name="twitter:image" content="https://weather-globe.salhi.com/og-image.jpg" />
+    <meta name="twitter:image:alt" content="A 3D globe of Earth with satellite clouds, the line between day and night and city temperatures." />
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://weather-globe.salhi.com/#website",
+          "url": "https://weather-globe.salhi.com/",
+          "name": "Weather Globe",
+          "inLanguage": "en"
+        },
+        {
+          "@type": "WebApplication",
+          "@id": "https://weather-globe.salhi.com/#app",
+          "name": "Weather Globe",
+          "alternateName": "Weather Globe: live 3D satellite cloud map and ISS tracker",
+          "url": "https://weather-globe.salhi.com/",
+          "isPartOf": { "@id": "https://weather-globe.salhi.com/#website" },
+          "description": "A free, interactive 3D globe of the weather right now: the real day and night, clouds decoded from live geostationary satellite infrared imagery, wind near the ground, current temperatures for about 230 world cities, the International Space Station tracked live, place search and a world music player. It runs entirely in the browser.",
+          "applicationCategory": "UtilitiesApplication",
+          "applicationSubCategory": "Weather visualization",
+          "operatingSystem": "Any",
+          "browserRequirements": "Requires JavaScript and a WebGL2-capable browser; a plain outline globe is shown without WebGL2.",
+          "inLanguage": "en",
+          "isAccessibleForFree": true,
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+          "license": "https://opensource.org/license/mit",
+          "image": "https://weather-globe.salhi.com/og-image.jpg",
+          "screenshot": "https://weather-globe.salhi.com/og-image.jpg",
+          "sameAs": ["https://github.com/vazyvazy123/weather-globe"],
+          "featureList": [
+            "Spinnable 3D globe with the real line between day and night",
+            "Clouds decoded from NOAA's global geostationary infrared mosaic, with finer NASA GIBS satellite detail when zoomed in",
+            "Wind near the ground as drifting trails, from Open-Meteo's hourly forecast",
+            "Current temperatures for about 230 world cities",
+            "Live International Space Station position and 3D model, worked out in the browser from its orbital elements",
+            "Search for any town or region on Earth",
+            "World music player with 30-second previews and a song of the day picked by the ISS"
+          ],
+          "isBasedOn": [
+            { "@type": "CreativeWork", "name": "NOAA nowCOAST Global Mosaic of Geostationary Satellite Imagery (GMGSI)", "url": "https://nowcoast.noaa.gov/" },
+            { "@type": "CreativeWork", "name": "NASA Global Imagery Browse Services (GIBS)", "url": "https://earthdata.nasa.gov/gibs" },
+            { "@type": "CreativeWork", "name": "Open-Meteo weather and geocoding APIs", "url": "https://open-meteo.com/" },
+            { "@type": "CreativeWork", "name": "Natural Earth", "url": "https://www.naturalearthdata.com/" },
+            { "@type": "CreativeWork", "name": "wheretheiss.at", "url": "https://wheretheiss.at/" }
+          ]
+        }
+      ]
+    }
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <noscript>Weather Globe needs JavaScript (and WebGL2 for the full globe).</noscript>
+    <div id="root">
+      <!-- What the page is, in plain text, for everyone (and every crawler) until the app replaces it on load -->
+      <main class="about">
+        <h1>Weather Globe: a live 3D weather map of the Earth</h1>
+        <p class="about-loading">Loading the live globe…</p>
+        <p>Weather Globe is a free, interactive 3D globe of the weather right now. It shows the real day and night, clouds
+          decoded from live geostationary satellite infrared imagery, the wind near the ground, current temperatures for about
+          230 world cities, and the International Space Station flying over the globe in real time. No account, no sign-up:
+          everything is worked out in your browser.</p>
+
+        <h2>What you can do</h2>
+        <ul>
+          <li>Drag to turn the globe and scroll to zoom; the land and the clouds sharpen as you zoom in.</li>
+          <li>See satellite clouds, and a Wind layer of drifting trails; the Layers menu turns each on or off.</li>
+          <li>Search any town or region on Earth, fly to it and read its weather now, in °F or °C.</li>
+          <li>Ride along with the International Space Station, drawn as a 3D model at its real height, with what lies below it.</li>
+          <li>Turn on Music for 30-second previews of songs from cities around the world on a virtual cassette, and a song of the
+            day picked by the first music city the ISS flies over after midnight UTC.</li>
+        </ul>
+
+        <h2>How fresh is the data?</h2>
+        <p>City temperatures are refreshed every hour. The page checks for a new NOAA cloud mosaic every 20 minutes, and zoomed in
+          by day it draws the clouds from satellite pictures taken every 10 minutes. The ISS is worked out in your browser (SGP4)
+          from its orbital elements, read every few hours, to within about 10 km of NASA-grade trackers for a day.</p>
+
+        <h2>Data sources</h2>
+        <ul>
+          <li>Clouds: <a href="https://nowcoast.noaa.gov/">NOAA nowCOAST</a> Global Mosaic of Geostationary Satellite Imagery (GMGSI), longwave infrared.</li>
+          <li>Imagery: <a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a> (Blue Marble, shaded relief, GOES-East, GOES-West and Himawari).</li>
+          <li>Temperatures, wind and place search: <a href="https://open-meteo.com/">Open-Meteo</a> (CC BY 4.0).</li>
+          <li>Coastlines and borders: <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</li>
+          <li>The ISS's orbital elements: <a href="https://wheretheiss.at/">wheretheiss.at</a>.</li>
+          <li>Music previews and covers: Apple Music; singers' photos: Deezer.</li>
+        </ul>
+
+        <h2>About</h2>
+        <p>Weather Globe is open source (MIT) and hand-written in WebGL2 with no 3D library:
+          <a href="https://github.com/vazyvazy123/weather-globe">source code and documentation on GitHub</a>. It shows current
+          conditions and model data to explore; it is not an official forecast or warning service.</p>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

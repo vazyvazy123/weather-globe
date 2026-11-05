@@ -1,0 +1,6 @@
+# Weather Globe is public and open source: search engines and AI assistants are welcome.
+# (Never block /assets/: search engines need the scripts and styles to render the page.)
+User-agent: *
+Allow: /
+
+Sitemap: https://weather-globe.salhi.com/sitemap.xml

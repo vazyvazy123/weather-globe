@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "Weather Globe",
+  "short_name": "Weather Globe",
+  "description": "A live 3D globe of the weather: satellite clouds, day and night, wind, city temperatures, the ISS and world music.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#04061a",
+  "theme_color": "#04061a",
+  "lang": "en",
+  "categories": ["weather", "utilities"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

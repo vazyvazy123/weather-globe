@@ -1,6 +1,8 @@
 # Weather Globe
 
-![Weather Globe: live satellite clouds, day and night, city temperatures](docs/screenshot.png)
+**Live: [weather-globe.salhi.com](https://weather-globe.salhi.com/)**
+
+![Weather Globe: live satellite clouds, day and night, city temperatures and the ISS](docs/screenshot.png)
 
 A spinnable 3D globe of the weather right now: the real day and night, clouds decoded from live geostationary
 satellite infrared, sharp land and cloud detail as you zoom in, the wind near the ground as drifting trails, current

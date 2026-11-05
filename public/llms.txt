@@ -1,0 +1,16 @@
+# Weather Globe
+
+> Weather Globe (https://weather-globe.salhi.com/) is a free, open-source (MIT), browser-based interactive 3D globe of the weather right now: the real day and night, clouds decoded from live NOAA geostationary satellite infrared imagery, wind near the ground, current temperatures for about 230 world cities, a live International Space Station tracker with a 3D model, place search, and a world music player with a song of the day picked by the ISS. Hand-written WebGL2 with no 3D library; everything is worked out in the browser. It is not an official forecast or warning service, and it is unrelated to other apps named "Weather Globe".
+
+## Use it
+- [Weather Globe (the live app)](https://weather-globe.salhi.com/): needs JavaScript, and WebGL2 for the full globe
+
+## Documentation
+- [README on GitHub](https://github.com/vazyvazy123/weather-globe#readme): features, how it works, data sources, licences
+
+## Data sources
+- [NOAA nowCOAST GMGSI](https://nowcoast.noaa.gov/): the global geostationary infrared mosaic (clouds)
+- [NASA GIBS](https://earthdata.nasa.gov/gibs): Blue Marble, GOES-East, GOES-West and Himawari imagery
+- [Open-Meteo](https://open-meteo.com/): temperatures, wind and place search (CC BY 4.0)
+- [Natural Earth](https://www.naturalearthdata.com/): coastlines and borders
+- [wheretheiss.at](https://wheretheiss.at/): the ISS's orbital elements
