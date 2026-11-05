@@ -38,19 +38,24 @@ weather data directly from the providers listed below.
 - **Weather-model clouds where the satellite is blind.** Open-Meteo's cloud cover on a coarse world grid fills the
   poles and the low cloud infrared cannot see; it is baked into a 4096 × 2048 cloud map with domain-warped noise, a
   strip per frame, so redraws cost the CPU nothing.
-- **The wind, drifting.** Turn on Wind and short trails drift over the globe with the wind near the ground — pale where
-  it is calm, gold and rose in a gale — curling round storms and streaming with the trade winds. The field is
-  Open-Meteo's hourly forecast on a 7.5° × 10° grid, read between its points along smooth (Catmull-Rom) curves and
-  stepped through the hours as they pass. The particles live on a canvas of their own over the globe, so their motion
-  (about thirty steps a second) never redraws the globe; the view always holds about the same number of trails however
-  close you zoom.
+- **The wind, drifting.** Turn on Wind and long, silky trails flow over the globe with the wind near the ground — a
+  soft blue-white for most of it, warming to gold and rose only in a gale — curling round storms and streaming with the
+  trade winds. Each trail tapers from a bright, hair-thin head to nothing at its tail, and fades in and out slowly, so
+  nothing pulses. The field is Open-Meteo's hourly forecast on a 7.5° × 10° grid, read between its points along smooth
+  (Catmull-Rom) curves and stepped through the hours as they pass. The particles live on a canvas of their own over the
+  globe, so their motion (about thirty steps a second) never redraws the globe; the view always holds about the same
+  number of trails however close you zoom.
 - **The ISS, live, worked out in the browser.** The station's orbital elements (a TLE, fetched every few hours) are
   propagated on the page — a compact SGP4: J2's turning of the orbit's plane and perigee, drag, Greenwich sidereal time,
   the WGS-84 ellipsoid — to within about 10 km of NASA-grade trackers for a day, so it moves across the globe with its
   path ahead and behind without asking any server where it is. It is drawn at its real height (it rises over the
-  globe's edge), its truss across its path, with a line down to the point below, the ground its crew can see, and dims
-  when it passes into the Earth's shadow. Its panel says what lies below (the nearest city, the
-  land, or which sea), its height and speed, day or night; Follow keeps the camera over it.
+  globe's edge) as a small 3D model — truss, eight gold solar wings, radiators and the pressurised modules — rendered
+  with WebGL2 in its real attitude (the truss across its path, the modules along it), its wings turned to face the sun
+  as the real ones do, lit by the sun with a blue Earthshine from below, and dimming to Earthshine alone in the Earth's
+  shadow. A line runs down to the point below; chosen, it also shows the ground its crew can see. Its panel says what
+  lies below (the nearest city, the land, or which sea), its height and speed, day or night. Follow rides along at
+  sixty times its speed, so the globe turns beneath it (a lap in about a minute and a half); Live keeps the camera over
+  it now.
 - **A song of the day, picked by the ISS.** Each day's song comes from the first city with music the station flies over
   after midnight UTC — the same for everyone — playable from the ISS's panel or the empty player.
 - **Find any place as you type.** The search at the top left offers the globe's own cities and countries at once and
@@ -84,10 +89,12 @@ npm install
 npm run dev
 ```
 
-Then open the printed local address (usually http://localhost:5173). Drag to turn the globe, scroll or use `+` / `−`
-to zoom, the arrow keys to move, and click a city for its details. Press `/` (or click the box at the top left) to find
-a place, and click the ISS for where it is and the song of the day. The toolbar flies to regions, starts a slow world
-tour, turns on the music, toggles the clouds, the wind and the ISS, and switches °C / °F.
+Then open the printed local address (usually http://localhost:5173). The globe opens turning slowly (still, if you
+prefer reduced motion); drag to turn it yourself, scroll or use the `+` / `−` at its bottom right to zoom, the arrow keys
+to move, and click a city for its details. Press `/` (or click the box at the top left) to find a place, and click the
+ISS for where it is and the song of the day. The toolbar's Regions menu flies to a part of the world; Tour starts or
+stops the turning; ♪ Music turns on the music; the Layers menu toggles the clouds, the wind and the ISS; and °C / °F
+switches units. The ⓘ at the bottom right says what each layer shows now and links every source.
 
 Other scripts:
 
