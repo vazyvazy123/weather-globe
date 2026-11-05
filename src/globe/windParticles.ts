@@ -16,10 +16,10 @@ export const TRAIL = 14
 /** a trail segment as drawn: x0, y0, x1, y1 (device px, y down), opacity, the wind's speed (m/s) */
 export const SEG_FLOATS = 6
 /** CSS px a second a particle moves per m/s of wind */
-export const PX_PER_S_PER_MS = 7
+export const PX_PER_S_PER_MS = 4.5
 export const MAX_PARTICLES = 4000
 /** CSS px² of globe in view per particle */
-const AREA_PER_PARTICLE = 420
+const AREA_PER_PARTICLE = 700
 /** a particle lives this many steps (at 30 a second, ~1.7–3.7 s), fading in and out over FADE_STEPS */
 const LIFE_MIN = 50
 const LIFE_MAX = 110

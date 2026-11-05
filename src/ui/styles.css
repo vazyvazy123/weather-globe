@@ -23,7 +23,6 @@ a { color: var(--ink-2); }
 .app { display: flex; flex-direction: column; height: 100%; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 16px;
   background: rgba(6, 8, 26, 0.92); border-bottom: 1px solid var(--line); z-index: 2; }
-.lead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
 .bar h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-1); }
 .tools { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { height: 28px; padding: 0 12px; border-radius: 14px; border: 1px solid var(--line); font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
@@ -85,15 +84,17 @@ a { color: var(--ink-2); }
   pointer-events: none; text-shadow: 0 1px 3px #000; }
 .caption .warn { color: var(--warn); }
 .caption .credit { color: var(--ink-4); pointer-events: auto; }
-/* the place search at the top left: the field, the completion drawn in grey behind it, and the list of places */
-.search { position: relative; display: flex; align-items: center; width: 250px; max-width: 100%; height: 30px; border-radius: 15px;
-  border: 1px solid var(--line); background: rgba(12, 15, 40, 0.75); transition: border-color 160ms, background-color 160ms; }
-.search:focus-within { border-color: var(--accent); background: rgba(14, 18, 48, 0.96); }
+/* the place search over the globe's top left corner: the field, the completion drawn in grey behind it, and the list */
+.stage-search { position: absolute; top: 14px; left: 16px; z-index: 4; width: min(280px, calc(100% - 32px)); }
+.search { position: relative; display: flex; align-items: center; width: 100%; height: 34px; border-radius: 17px;
+  border: 1px solid rgba(141, 151, 220, 0.3); background: rgba(8, 11, 32, 0.86); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+  transition: border-color 160ms, background-color 160ms; }
+.search:focus-within { border-color: var(--accent); background: rgba(10, 13, 38, 0.97); }
 .search-icon { flex: none; width: 14px; height: 14px; margin: 0 7px 0 11px; fill: none; stroke: var(--ink-4); stroke-width: 1.6px; stroke-linecap: round; }
 .search:focus-within .search-icon { stroke: var(--accent); }
 .search-field { position: relative; flex: 1; min-width: 0; height: 100%; }
 .search-field input, .search-ghost { position: absolute; inset: 0; width: 100%; margin: 0; padding: 0 12px 0 0; border: 0;
-  font: 500 13px/28px var(--sans); letter-spacing: 0.01em; }
+  font: 500 13px/32px var(--sans); letter-spacing: 0.01em; }
 .search-field input { outline: 0; background: transparent; color: var(--ink-1); }
 .search-field input::placeholder { color: var(--ink-4); }
 .search-ghost { color: var(--ink-4); white-space: pre; overflow: hidden; pointer-events: none; }
@@ -115,18 +116,38 @@ a { color: var(--ink-2); }
 .pin-hole { fill: rgba(8, 10, 28, 0.85); }
 .pin-label { font: 600 12px var(--sans); fill: var(--ink-1); paint-order: stroke; stroke: rgba(6, 8, 24, 0.9); stroke-width: 3px; stroke-linejoin: round; }
 
-/* the ISS and its path: dotted ahead, faint behind */
+/* the ISS: its path (dotted ahead, faint behind), the ground its crew can see, a line down to the point below it, and the
+   station itself — gold arrays on a silver truss, white modules — dimmed in the Earth's shadow */
 .iss-track { fill: none; stroke: rgba(160, 225, 255, 0.5); stroke-width: 1.2px; stroke-dasharray: 1.5 4; stroke-linecap: round; }
 .iss-track.past { stroke: rgba(160, 225, 255, 0.2); stroke-dasharray: none; }
+.iss-foot { fill: rgba(150, 220, 255, 0.03); stroke: rgba(160, 225, 255, 0.22); stroke-width: 1px; stroke-dasharray: 3 5; }
+.iss-path.selected .iss-foot { fill: rgba(150, 220, 255, 0.06); stroke: rgba(160, 225, 255, 0.45); }
+.iss-plumb { fill: none; stroke: rgba(210, 238, 255, 0.5); stroke-width: 1px; stroke-dasharray: 1.5 2; }
+.iss-ground { fill: #d6efff; stroke: rgba(6, 8, 24, 0.8); stroke-width: 1px; }
 .iss { cursor: pointer; outline: none; }
 .iss-hit { fill: transparent; }
-.iss-glow { fill: rgba(150, 220, 255, 0.16); transition: fill 160ms; }
-.iss:hover .iss-glow, .iss.selected .iss-glow { fill: rgba(150, 220, 255, 0.34); }
-.iss:focus-visible .iss-glow { stroke: var(--accent); stroke-width: 1.5px; }
-.iss-wing { fill: #3d6fb6; stroke: #cfe6ff; stroke-width: 0.8px; }
-.iss-truss { stroke: #e8f2ff; stroke-width: 1.2px; }
-.iss-body { fill: #f4f7ff; }
-.iss-label { font: 700 10.5px var(--sans); letter-spacing: 0.08em; fill: #cfe6ff; paint-order: stroke; stroke: rgba(6, 8, 24, 0.9); stroke-width: 3px; stroke-linejoin: round; }
+.iss-halo { fill: url(#g-iss-halo); opacity: 0.85; transition: opacity 200ms; }
+.iss:hover .iss-halo, .iss.selected .iss-halo { opacity: 1; }
+.iss:focus-visible .iss-halo { stroke: var(--accent); stroke-width: 1.5px; }
+.iss-craft { filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.65)); transition: filter 400ms; }
+.iss-array { fill: url(#g-iss-array); stroke: rgba(48, 28, 8, 0.75); stroke-width: 0.5px; }
+.iss-array.small { fill: #c99550; }
+.iss-cells { fill: none; stroke: rgba(56, 32, 10, 0.55); stroke-width: 0.45px; }
+.iss-truss { fill: #dfe5ef; stroke: rgba(20, 24, 40, 0.6); stroke-width: 0.4px; }
+.iss-rad { fill: #f7f9fc; stroke: rgba(20, 24, 40, 0.5); stroke-width: 0.4px; }
+.iss-module { fill: #f4f6fa; stroke: rgba(20, 24, 40, 0.55); stroke-width: 0.5px; }
+.iss.eclipsed .iss-craft { filter: brightness(0.45) saturate(0.6) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.65)); }
+.iss.eclipsed .iss-halo { opacity: 0.3; }
+.iss-tag rect { fill: rgba(8, 11, 32, 0.88); stroke: rgba(160, 225, 255, 0.45); stroke-width: 1px; }
+.iss.selected .iss-tag rect { stroke: var(--accent); }
+.iss-tag text { font: 700 9.5px var(--sans); letter-spacing: 0.12em; fill: #d8efff; }
+/* rings round the ISS while its panel is open: HTML, scaled by the compositor */
+.iss-beacon { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.iss-beacon i { position: absolute; left: -34px; top: -34px; width: 68px; height: 68px; border-radius: 50%; border: 1.4px solid rgba(160, 225, 255, 0.75);
+  transform: scale(0.35); opacity: 0; will-change: transform, opacity; animation: iss-ping 3.2s cubic-bezier(0.2, 0.6, 0.3, 1) infinite; }
+.iss-beacon i + i { animation-delay: -1.6s; }
+@keyframes iss-ping { from { transform: scale(0.35); opacity: 0.8; } to { transform: scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .iss-beacon { visibility: hidden; } }
 
 /* the ISS's panel */
 .iss-panel { width: min(290px, calc(100% - 32px)); }

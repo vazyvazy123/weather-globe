@@ -3,7 +3,7 @@ import { CITIES } from "../src/data/cities"
 import { parseIssTle } from "../src/data/iss"
 import { TRACKS } from "../src/data/music"
 import { OVER_KM, dayStartOf, songOfDay } from "../src/data/songOfDay"
-import { greatCircleKm } from "../src/geo/distance"
+import { EARTH_KM, greatCircleKm, smallCircle } from "../src/geo/distance"
 import { WORLD_LAND } from "../src/geo/worldLand"
 import { seaName, whereBelow } from "../src/geo/below"
 import { issAt, parseTle } from "../src/geo/orbit"
@@ -50,6 +50,15 @@ describe("songOfDay", () => {
 
   test("no songs, no pick", () => {
     expect(songOfDay(el, DAY, CITIES, [])).toBeNull()
+  })
+})
+
+describe("smallCircle", () => {
+  test("every point is the radius away from the middle, round the whole circle", () => {
+    const ring = smallCircle(40, 170, 0.35, 36)
+    expect(ring).toHaveLength(37)
+    for (const p of ring) expect(greatCircleKm(40, 170, p.lat, p.lon)).toBeCloseTo(0.35 * EARTH_KM, 0)
+    expect(ring[36].lat).toBeCloseTo(ring[0].lat)
   })
 })
 

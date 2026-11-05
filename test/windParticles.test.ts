@@ -56,7 +56,7 @@ describe("WindParticles", () => {
     const far = new WindParticles(seeded(1)), near = new WindParticles(seeded(1))
     far.step(steady(5, 0), CAM, { ...SCREEN, r: 100 }, 1 / 30)
     near.step(steady(5, 0), CAM, { ...SCREEN, r: 900 }, 1 / 30)
-    expect(far.count).toBeGreaterThan(50)
+    expect(far.count).toBeGreaterThan(30)
     expect(near.count).toBeGreaterThan(far.count * 3)
   })
 

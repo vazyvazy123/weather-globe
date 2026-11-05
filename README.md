@@ -47,7 +47,9 @@ weather data directly from the providers listed below.
 - **The ISS, live, worked out in the browser.** The station's orbital elements (a TLE, fetched every few hours) are
   propagated on the page — a compact SGP4: J2's turning of the orbit's plane and perigee, drag, Greenwich sidereal time,
   the WGS-84 ellipsoid — to within about 10 km of NASA-grade trackers for a day, so it moves across the globe with its
-  path ahead and behind without asking any server where it is. Its panel says what lies below (the nearest city, the
+  path ahead and behind without asking any server where it is. It is drawn at its real height (it rises over the
+  globe's edge), its truss across its path, with a line down to the point below, the ground its crew can see, and dims
+  when it passes into the Earth's shadow. Its panel says what lies below (the nearest city, the
   land, or which sea), its height and speed, day or night; Follow keeps the camera over it.
 - **A song of the day, picked by the ISS.** Each day's song comes from the first city with music the station flies over
   after midnight UTC — the same for everyone — playable from the ISS's panel or the empty player.

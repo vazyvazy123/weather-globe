@@ -28,7 +28,7 @@ import { cToF } from "../globe/tempColor"
 import { windAt } from "../globe/windField"
 import { WindLegend } from "./WindLegend"
 
-// The page: the globe filling the window; the place search at the top left; a toolbar (regions, the world tour, the music,
+// The page: the globe filling the window, the place search over its top left corner; a toolbar (regions, the world tour, the music,
 // clouds, wind, the ISS, units, zoom); the panel of the city chosen (with its country's songs), of a place searched
 // for, or of the ISS (with the song of the day it picked); the music player; and a caption saying what is drawn and
 // where it comes from. With the music on, a city's click plays its song, and each new song flies the globe to its city.
@@ -136,6 +136,7 @@ export function App() {
   const music = useMusic(WORLD_ORDER)
   const [dockRef, dockBox] = useBox()
   const [panelRef, panelBox] = useBox()
+  const [searchRef, searchBox] = useBox()
 
   const weather = useWeather()
   const sat = useSatellite(showClouds)
@@ -268,15 +269,13 @@ export function App() {
   const showDock = musicMode || music.track != null
   const issPanel = issOpen && issLive != null
   const panelShown = issPanel || city != null || pin != null
-  const avoid = useMemo(() => [...grow(showDock ? dockBox : null, PANEL_MARGIN_PX), ...grow(panelShown ? panelBox : null, PANEL_MARGIN_PX)], [showDock, dockBox, panelShown, panelBox])
+  const avoid = useMemo(() => [...grow(showDock ? dockBox : null, PANEL_MARGIN_PX), ...grow(panelShown ? panelBox : null, PANEL_MARGIN_PX), ...grow(searchBox, PANEL_MARGIN_PX)],
+    [showDock, dockBox, panelShown, panelBox, searchBox])
 
   return (
     <div className="app">
       <header className="bar">
-        <div className="lead">
-          <h1>Weather Globe</h1>
-          <SearchBox onPick={onPick} />
-        </div>
+        <h1>Weather Globe</h1>
         <nav className="tools" aria-label="Globe controls">
           {REGIONS.map(([name, cam]) => <button key={name} type="button" className="chip" onClick={() => { follow(false); controller.flyTo(cam) }}>{name}</button>)}
           <button type="button" className={`chip${touring ? " on" : ""}`} aria-pressed={touring} onClick={() => { follow(false); controller.setTouring(!touring) }}>Tour</button>
@@ -295,6 +294,7 @@ export function App() {
         <Globe cities={cities} clouds={weather.grid} satellite={showClouds ? satellite : null} selected={selected} onCity={onCity}
           controller={controller} showClouds={showClouds && gpu !== false} tiles={tiles} onGpu={setGpu} onDetail={setDetail} reserveBottom={CAPTION_PX}
           musicMode={musicMode} playing={trackCity} avoid={avoid} wind={windFrame} pin={pinMark} iss={showIss ? issLive : null} issSelected={issOpen} onIss={openIss} />
+        <div ref={searchRef} className="stage-search"><SearchBox onPick={onPick} /></div>
         {issPanel ? (
           <IssPanel el={issLive} pick={dayPick} unit={unit} music={music} following={following} onFollow={() => follow(!following)}
             onFly={findCity} onClose={() => { setIssOpen(false); follow(false) }} boxRef={panelRef} />
