@@ -12,6 +12,13 @@ describe("spreadMarkers", () => {
     expect(spreadMarkers([pt(50, 50), pt(58, 52), pt(80, 50)], 15)).toEqual([true, false, true])
   })
 
+  test("a marker already shown keeps its place a little closer than a new one may come, so none flickers on the edge", () => {
+    expect(spreadMarkers([pt(0, 0), pt(12, 0)], 15)).toEqual([true, false])
+    expect(spreadMarkers([pt(0, 0), pt(12, 0)], 15, undefined, [false, true])).toEqual([true, true])
+    // much closer, it gives way after all
+    expect(spreadMarkers([pt(0, 0), pt(6, 0)], 15, undefined, [false, true])).toEqual([true, false])
+  })
+
   test("a marker left out never blocks the ones after it", () => {
     // b is too close to a; c is close to b but not to a, so c shows
     expect(spreadMarkers([pt(0, 0), pt(10, 0), pt(20, 0)], 15)).toEqual([true, false, true])

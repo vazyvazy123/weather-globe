@@ -6,11 +6,15 @@
 
 export interface ScreenPoint { x: number; y: number }
 
-export function spreadMarkers(points: readonly ScreenPoint[], minPx: number, forced?: readonly boolean[]): boolean[] {
+/** a marker shown a moment ago keeps its place down to this share of `minPx`, so one on the edge of fitting does not
+ *  flicker in and out as the globe turns */
+export const KEEP_SHARE = 0.65
+
+/** `kept`: the markers shown a moment ago */
+export function spreadMarkers(points: readonly ScreenPoint[], minPx: number, forced?: readonly boolean[], kept?: readonly boolean[]): boolean[] {
   const cells = new Map<string, ScreenPoint[]>()
-  const min2 = minPx * minPx
   const cellOf = (v: number) => Math.floor(v / minPx)
-  const crowded = (p: ScreenPoint): boolean => {
+  const crowded = (p: ScreenPoint, min2: number): boolean => {
     const ci = cellOf(p.x), cj = cellOf(p.y)
     for (let i = ci - 1; i <= ci + 1; i++) {
       for (let j = cj - 1; j <= cj + 1; j++) {
@@ -20,7 +24,8 @@ export function spreadMarkers(points: readonly ScreenPoint[], minPx: number, for
     return false
   }
   return points.map((p, k) => {
-    if (!forced?.[k] && crowded(p)) return false
+    const min = kept?.[k] ? minPx * KEEP_SHARE : minPx
+    if (!forced?.[k] && crowded(p, min * min)) return false
     const key = `${cellOf(p.x)},${cellOf(p.y)}`
     const cell = cells.get(key)
     if (cell) cell.push(p)

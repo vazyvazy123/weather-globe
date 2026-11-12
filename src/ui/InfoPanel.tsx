@@ -47,7 +47,8 @@ export function InfoPanel({ status, showIss, showMusic, showQuakes }: { status: 
             {showMusic && <li>Music previews: {link("https://www.apple.com/apple-music/", "Apple Music")}; singers' photos: Deezer</li>}
           </ul>
           <p className="info-privacy">Your browser asks these services itself, so they see its address; Open-Meteo also sees what you type in
-            the search, and NASA the part of the world you zoom into. The page keeps no cookies and runs no analytics.</p>
+            the search, and NASA the part of the world you zoom into. The page keeps no cookies and runs no analytics; your
+            favorite cities and settings stay in this browser.</p>
         </section>
       )}
     </div>
