@@ -3,6 +3,7 @@ import headers from "../public/_headers?raw"
 import catalog from "../src/data/musicCatalog.json"
 import { GEOCODE_URL } from "../src/data/geocode"
 import { ISS_TLE_URL } from "../src/data/iss"
+import { QUAKE_URL } from "../src/data/quakes"
 import { SAT_WMS_URL } from "../src/data/satellite"
 import { GIBS_WMS, GIBS_WMTS } from "../src/data/tileFetcher"
 import { OPEN_METEO_URL } from "../src/data/weather"
@@ -24,8 +25,8 @@ const allows = (directive: string, url: string): boolean => {
 }
 
 describe("the site's Content-Security-Policy", () => {
-  test("lets the app fetch from every host it reads (weather, wind, places, the ISS, satellites, land)", () => {
-    for (const url of [OPEN_METEO_URL, GEOCODE_URL, ISS_TLE_URL, SAT_WMS_URL, GIBS_WMTS, GIBS_WMS]) expect(allows("connect-src", url), url).toBe(true)
+  test("lets the app fetch from every host it reads (weather, wind, places, the ISS, earthquakes, satellites, land)", () => {
+    for (const url of [OPEN_METEO_URL, GEOCODE_URL, ISS_TLE_URL, QUAKE_URL, SAT_WMS_URL, GIBS_WMTS, GIBS_WMS]) expect(allows("connect-src", url), url).toBe(true)
   })
 
   test("lets the player show every cover and singer's photo, and play every preview", () => {

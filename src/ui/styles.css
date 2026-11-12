@@ -65,9 +65,10 @@ a { color: var(--ink-2); }
 
 .globe-stage { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; outline: none; user-select: none; -webkit-user-select: none; }
 .globe-stage.dragging { cursor: grabbing; }
+.globe-stage.over-quake:not(.dragging) { cursor: pointer; }
 .globe-stage:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
-.globe-gl, .globe-wind, .globe-svg, .globe-pills { position: absolute; left: 0; top: 0; display: block; }
-.globe-wind { pointer-events: none; }
+.globe-gl, .globe-wind, .globe-quakes, .globe-svg, .globe-pills { position: absolute; left: 0; top: 0; display: block; }
+.globe-wind, .globe-quakes { pointer-events: none; }
 .globe-pills { width: 100%; height: 100%; pointer-events: none; }
 /* without WebGL: the SVG globe */
 .globe-fallback .sphere { fill: #0c2348; stroke: #3d5fb0; stroke-width: 1px; }
@@ -178,6 +179,28 @@ a { color: var(--ink-2); }
 .iss-beacon i + i { animation-delay: -1.6s; }
 @keyframes iss-ping { from { transform: scale(0.35); opacity: 0.8; } to { transform: scale(1); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .iss-beacon { visibility: hidden; } }
+
+/* the earthquakes (quakeView.ts draws their rings): the newest pulse, and the one whose card is open, in gold */
+.quake-pulses { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.quake-pulse { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.quake-pulse i { position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%; border: 1.6px solid rgba(255, 84, 84, 0.85);
+  transform: scale(0.2); opacity: 0; will-change: transform, opacity; animation: quake-ping 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite; }
+.quake-pulse i + i { animation-delay: -1.2s; }
+.quake-pulse.chosen i { border-color: rgba(244, 185, 66, 0.9); }
+@keyframes quake-ping { from { transform: scale(0.2); opacity: 0.9; } to { transform: scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .quake-pulses { visibility: hidden; } }
+.quake-legend { display: inline-flex; align-items: center; gap: 10px; font-size: 10.5px; color: var(--ink-4); }
+.quake-legend-name { color: var(--ink-3); }
+.quake-age { display: inline-flex; align-items: center; gap: 4px; }
+.quake-age i { width: 8px; height: 8px; border-radius: 50%; opacity: 0.85; }
+.quake-tsunami { color: var(--warn); }
+.quake-panel .quake-link { margin-top: 8px; }
+.quake-panel a { color: var(--ink-1); }
+/* the strongest quakes as buttons for the keyboard: out of sight until one has the focus, then a chip under the search */
+.quake-keys { position: absolute; top: 58px; left: 16px; z-index: 8; }
+.quake-keys button { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.quake-keys button:focus-visible { width: auto; height: auto; max-width: calc(100vw - 32px); overflow: hidden; clip-path: none; text-overflow: ellipsis;
+  padding: 8px 12px; border-radius: 10px; border: 1px solid var(--accent); background: rgba(9, 12, 34, 0.97); color: var(--ink-1); font-size: 13px; outline: none; }
 
 /* the ISS's panel */
 .iss-panel { width: min(290px, calc(100% - 32px)); }

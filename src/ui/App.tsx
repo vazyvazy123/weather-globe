@@ -7,6 +7,8 @@ import { CITIES, type City } from "../data/cities"
 import { countryName, MUSIC_CITIES, TRACKS, tracksForCity, WORLD_ORDER } from "../data/music"
 import { useFresh, useWeather, type Source } from "../data/useWeather"
 import { ISS_EVERY_MS, fetchIssTle, parseIssTle, type IssTle } from "../data/iss"
+import { QUAKE_EVERY_MS, fetchQuakes, validFeed, type QuakeFeed } from "../data/quakes"
+import { QuakeKeys, QuakeLegend, QuakePanel } from "./QuakePanel"
 import { dayStartOf, songOfDay } from "../data/songOfDay"
 import type { PlaceHit } from "../data/places"
 import { fetchPoint } from "../data/weather"
@@ -55,6 +57,11 @@ const readWind = (): boolean => { try { return globalThis.localStorage?.getItem(
 const ISS_KEY = "weather-globe:iss-on"
 const readIss = (): boolean => { try { return globalThis.localStorage?.getItem(ISS_KEY) !== "0" } catch { return true } }
 const ISS_SOURCE: Source<IssTle> = { key: "weather-globe:iss-tle:v1", everyMs: ISS_EVERY_MS, read: fetchIssTle, valid: (v) => parseIssTle(v) != null }
+// the earthquakes show from the start too, unless the viewer turned them off; a quake opened comes this close
+const QUAKES_KEY = "weather-globe:quakes-on"
+const readQuakes = (): boolean => { try { return globalThis.localStorage?.getItem(QUAKES_KEY) !== "0" } catch { return true } }
+const QUAKE_SOURCE: Source<QuakeFeed> = { key: "weather-globe:quakes:v1", everyMs: QUAKE_EVERY_MS, read: fetchQuakes, valid: validFeed }
+const QUAKE_ZOOM = 2.4
 /** a country found comes this close, a place found this close */
 const COUNTRY_ZOOM = 1.8
 const PLACE_ZOOM = 3.2
@@ -124,6 +131,8 @@ export function App() {
   const [showWind, setShowWind] = useState(readWind)
   const [showIss, setShowIss] = useState(readIss)
   const [issOpen, setIssOpen] = useState(false)
+  const [showQuakes, setShowQuakes] = useState(readQuakes)
+  const [quakeId, setQuakeId] = useState<string | null>(null)
   const [followMode, setFollowMode] = useState<FollowMode | null>(null)
   const [pin, setPin] = useState<FoundPlace | null>(null)
   const [pinWeather, setPinWeather] = useState<CityWeather | "failed" | null>(null)
@@ -156,6 +165,16 @@ export function App() {
   const issLive = issEl && Math.abs(now - issEl.epochMs) < ISS_STALE_MS ? issEl : null
   const today = dayStartOf(now)
   const dayPick = useMemo(() => (issLive ? songOfDay(issLive, today, CITIES, TRACKS) : null), [issLive, today])
+  // the earthquakes of the past week (read every few minutes while they are shown; not over the plain outline globe, which
+  // would hide them), and the one whose card is open
+  const quakesOn = showQuakes && gpu !== false
+  const quakeFeed = useFresh(QUAKE_SOURCE, quakesOn)
+  const quakes = quakesOn ? quakeFeed.value?.quakes ?? null : null
+  const quake = useMemo(() => (quakeId ? quakes?.find((q) => q.id === quakeId) : undefined), [quakes, quakeId])
+  // a quake gone from a newer feed (a week old now) closes its card
+  useEffect(() => { if (quakeId && quakes && !quake) setQuakeId(null) }, [quakeId, quakes, quake])
+  // a card opened from the keyboard's list takes the focus, and hands it back as it closes
+  const [quakeFromKeys, setQuakeFromKeys] = useState(false)
   // the ISS's clock: the real one, or on the ride RIDE_SPEED times as fast from the moment the ride began
   const issTime = useRef<{ mode: FollowMode | null; from: number }>({ mode: null, from: 0 })
   const issClock = useCallback(() => {
@@ -204,6 +223,12 @@ export function App() {
     try { globalThis.localStorage?.setItem(WIND_KEY, on ? "0" : "1") } catch { /* the choice lasts this visit only */ }
     return !on
   })
+  const switchQuakes = () => {
+    const next = !showQuakes
+    try { globalThis.localStorage?.setItem(QUAKES_KEY, next ? "1" : "0") } catch { /* the choice lasts this visit only */ }
+    setShowQuakes(next)
+    if (!next) setQuakeId(null)
+  }
   const flyToCity = useCallback((id: string, zoom: number) => {
     const c = CITY_BY_ID.get(id)
     if (c) controller.flyTo({ lon: c.lon, lat: c.lat, zoom: Math.max(controller.camera.zoom, zoom) })
@@ -215,6 +240,7 @@ export function App() {
     setSelected(id)
     setPin(null)
     setIssOpen(false)
+    setQuakeId(null)
     flyToCity(id, CITY_ZOOM)
     // with the music on, a city plays its first song (unless one of its songs is on already)
     if (!musicMode) return
@@ -235,7 +261,7 @@ export function App() {
   // closing the player hands the keyboard focus back to the chip that opens it
   const musicChip = useRef<HTMLButtonElement>(null)
   const closeMusic = useCallback(() => { musicChip.current?.focus(); stop(); setMusicMode(false) }, [stop])
-  const findCity = useCallback((id: string) => { setSelected(id); setPin(null); setIssOpen(false); flyToCity(id, CITY_ZOOM) }, [flyToCity])
+  const findCity = useCallback((id: string) => { setSelected(id); setPin(null); setIssOpen(false); setQuakeId(null); flyToCity(id, CITY_ZOOM) }, [flyToCity])
 
   // a place found by the search: a city opens as if clicked; a country or another place is flown to (a place with a pin
   // and its weather now)
@@ -243,6 +269,7 @@ export function App() {
     if (hit.kind === "city") { onCity(hit.id); return }
     setSelected(null)
     setIssOpen(false)
+    setQuakeId(null)
     setPin(hit.kind === "place" ? hit : null)
     controller.flyTo({ lon: hit.lon, lat: clampLat(hit.lat), zoom: Math.max(controller.camera.zoom, hit.kind === "country" ? COUNTRY_ZOOM : PLACE_ZOOM) })
   }, [controller, onCity])
@@ -255,7 +282,26 @@ export function App() {
   }, [pin])
   const pinMark = useMemo(() => (pin ? { lat: pin.lat, lon: pin.lon, name: pin.name } : null), [pin])
 
-  const openIss = useCallback(() => { setIssOpen(true); setSelected(null); setPin(null) }, [])
+  const openIss = useCallback(() => { setIssOpen(true); setSelected(null); setPin(null); setQuakeId(null) }, [])
+  // a quake's ring tapped (or picked from the keyboard's list): its card, the globe flown to it
+  const quakesRef = useRef(quakes)
+  quakesRef.current = quakes
+  const pickQuake = useCallback((id: string) => {
+    const q = quakesRef.current?.find((k) => k.id === id)
+    if (!q) return
+    setQuakeId(id)
+    setQuakeFromKeys(false)
+    setSelected(null)
+    setPin(null)
+    setIssOpen(false)
+    controller.flyTo({ lon: q.lon, lat: clampLat(q.lat), zoom: Math.max(controller.camera.zoom, QUAKE_ZOOM) })
+  }, [controller])
+  const pickQuakeByKey = useCallback((id: string) => { pickQuake(id); setQuakeFromKeys(true) }, [pickQuake])
+  const closeQuake = () => {
+    const id = quakeId
+    setQuakeId(null)
+    if (quakeFromKeys && id) document.querySelector<HTMLButtonElement>(`.quake-keys [data-quake="${CSS.escape(id)}"]`)?.focus()
+  }
   // the ISS chip: ride along with the station (shown and chosen first), or, riding, stop
   const rideIss = () => {
     if (followMode) { follow(null); return }
@@ -282,7 +328,7 @@ export function App() {
   }, [trackCity, byId, unit, now])
   const showDock = musicMode || music.track != null
   const issPanel = issOpen && issLive != null
-  const panelShown = issPanel || city != null || pin != null
+  const panelShown = issPanel || city != null || pin != null || quake != null
   const avoid = useMemo(() => [...grow(showDock ? dockBox : null, PANEL_MARGIN_PX), ...grow(panelShown ? panelBox : null, PANEL_MARGIN_PX), ...grow(searchBox, PANEL_MARGIN_PX),
     ...grow(cornerBox, PANEL_MARGIN_PX), ...grow(zoomBox, PANEL_MARGIN_PX)], [showDock, dockBox, panelShown, panelBox, searchBox, cornerBox, zoomBox])
   // what each layer shows now (in the ⓘ card), and what went wrong (small notes at the bottom left)
@@ -291,12 +337,14 @@ export function App() {
     windOn ? windCaption(wind, windFrame != null, now) : null,
     detailLine,
     showIss && issLive ? `The ISS: placed from its orbital elements of ${utcDay(issLive.epochMs)}` : null,
+    quakes && quakeFeed.value ? `Earthquakes: the ${quakes.length} of magnitude 2.5 or more in the past week, as the USGS listed them at ${utcTime(quakeFeed.value.atMs)}; a ring's size is the magnitude` : null,
   ].filter((s): s is string => s != null)
   const warnings = [
     gpu === false ? "WebGL2 is unavailable: showing the plain outline globe." : null,
     weather.error ? `Weather: ${weather.error}` : null,
     windOn && !windFrame && wind.error && wind.reading == null ? `Wind: forecast unavailable (${wind.error})` : null,
     showIss && !issLive && issTle.error ? `ISS: its orbit could not be read (${issTle.error})` : null,
+    quakesOn && !quakeFeed.value && quakeFeed.error ? `Earthquakes: the USGS feed could not be read (${quakeFeed.error})` : null,
   ].filter((s): s is string => s != null)
 
   return (
@@ -315,6 +363,7 @@ export function App() {
             { key: "clouds", label: "Clouds", checked: showClouds && gpu !== false, disabled: gpu === false, onSelect: () => setShowClouds((v) => !v) },
             { key: "wind", label: "Wind", checked: showWind && gpu !== false, disabled: gpu === false, onSelect: switchWind },
             { key: "iss", label: "The ISS", checked: showIss, onSelect: switchIss },
+            { key: "quakes", label: "Earthquakes", checked: quakesOn, disabled: gpu === false, onSelect: switchQuakes },
           ]} />
           <button type="button" className="chip" onClick={switchUnit} aria-label={`Show temperatures in °${unit === "C" ? "F" : "C"}`}>°{unit}</button>
         </nav>
@@ -322,7 +371,8 @@ export function App() {
       <main className={`stage${musicMode ? " music-mode" : ""}${panelShown ? " panel-open" : ""}`}>
         <Globe cities={cities} clouds={weather.grid} satellite={showClouds ? satellite : null} selected={selected} onCity={onCity}
           controller={controller} showClouds={showClouds && gpu !== false} tiles={tiles} onGpu={setGpu} onDetail={setDetail} reserveBottom={CAPTION_PX}
-          musicMode={musicMode} playing={trackCity} avoid={avoid} wind={windFrame} pin={pinMark} iss={showIss ? issLive : null} issSelected={issOpen} onIss={openIss} issClock={issClock} />
+          musicMode={musicMode} playing={trackCity} avoid={avoid} wind={windFrame} pin={pinMark} iss={showIss ? issLive : null} issSelected={issOpen} onIss={openIss} issClock={issClock}
+          quakes={quakes} quakeSelected={quake ? quake.id : null} onQuake={pickQuake} />
         <div ref={searchRef} className="stage-search"><SearchBox onPick={onPick} /></div>
         {/* beside the search on a phone, so next to it for Tab too */}
         <div ref={zoomRef} className="zoom" role="group" aria-label="Zoom">
@@ -354,15 +404,20 @@ export function App() {
             {pinWeather && pinWeather !== "failed" && pinWeather.utcOffsetS != null && <p className="dim">Local time {localTime(now, pinWeather.utcOffsetS)}</p>}
             <p className="dim">{pin.lat.toFixed(2)}°, {pin.lon.toFixed(2)}°{pinWeather && pinWeather !== "failed" && pinWeather.atMs != null ? ` · read ${utcTime(pinWeather.atMs)}` : ""}</p>
           </aside>
+        ) : quake ? (
+          <QuakePanel quake={quake} unit={unit} now={now} onClose={closeQuake} boxRef={panelRef} focusOnOpen={quakeFromKeys} />
         ) : null}
         {showDock && <MusicDock music={music} place={place} onClose={closeMusic} onFind={findCity} boxRef={dockRef} daySong={dayPick?.track ?? null} />}
         <footer className="caption">
           {warnings.map((w) => <div key={w} className="toast warn">{w}</div>)}
           {windOn && windFrame && <WindLegend unit={unit} />}
+          {quakes && quakes.length > 0 && <QuakeLegend />}
         </footer>
         <div ref={cornerRef} className="corner">
-          <InfoPanel status={status} showIss={showIss} showMusic={showDock} />
+          <InfoPanel status={status} showIss={showIss} showMusic={showDock} showQuakes={quakesOn} />
         </div>
+        {/* last for Tab: the strongest quakes, for the keyboard (their rings are drawn, not focusable) */}
+        {quakes && <QuakeKeys quakes={quakes} now={now} onPick={pickQuakeByKey} />}
       </main>
     </div>
   )
