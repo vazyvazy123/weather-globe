@@ -1,10 +1,13 @@
 import type { GlobeCamera } from "./camera"
 
-/** Views the toolbar can fly to. */
+/** The seven continents the toolbar's Regions menu flies to, each framed whole (Antarctica from as far south as the
+ *  camera tilts, 70°S, the pole in sight beyond it). */
 export const REGIONS: ReadonlyArray<readonly [string, GlobeCamera]> = [
-  ["Americas", { lon: -80, lat: 15, zoom: 1.3 }],
-  ["Europe", { lon: 12, lat: 47, zoom: 3.2 }],
-  ["Africa", { lon: 20, lat: 2, zoom: 1.6 }],
-  ["Asia-Pacific", { lon: 120, lat: 12, zoom: 1.5 }],
-  ["Globe", { lon: -30, lat: 25, zoom: 1 }],
+  ["North America", { lon: -100, lat: 45, zoom: 1.7 }],
+  ["South America", { lon: -60, lat: -24, zoom: 1.6 }],
+  ["Europe", { lon: 15, lat: 52, zoom: 2.6 }],
+  ["Africa", { lon: 18, lat: 2, zoom: 1.7 }],
+  ["Asia", { lon: 95, lat: 38, zoom: 1.5 }],
+  ["Australia", { lon: 145, lat: -27, zoom: 2 }],
+  ["Antarctica", { lon: 0, lat: -70, zoom: 1.6 }],
 ]

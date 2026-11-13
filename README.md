@@ -48,12 +48,14 @@ weather data directly from the providers listed below.
   (Catmull-Rom) curves and stepped through the hours as they pass. The particles live on a canvas of their own over the
   globe, so their motion (about thirty steps a second) never redraws the globe; the view always holds about the same
   number of trails however close you zoom.
-- **The past week's earthquakes.** Every quake of magnitude 2.5 or more in the past week, from the USGS's real-time feed
-  (read every 5 minutes): a ring lying on the ground at each, sized by its magnitude and coloured by its age — red in the
-  past hour, orange in the past day, gold before that — the newest pulsing. Together they trace the plates' edges: the
-  Ring of Fire round the Pacific, the mid-Atlantic ridge. Tap one for how strong it was, where, how long ago and how
-  deep, with a link to its USGS page (the strongest are also buttons for the keyboard). Some 600 rings are drawn on a
-  canvas of their own, one path per colour, so a turning globe redraws them for little.
+- **The past week's earthquakes.** Turn on Earthquakes (Layers) for every quake of magnitude 2.5 or more in the past
+  week, from the USGS's real-time feed (read every 5 minutes while shown): a ripple lying on the ground at each, like the
+  waves from a stone dropped in water — a bright epicentre and one ring, two from magnitude 4.5, three from 6, a soft
+  glow from 5 — sized by its magnitude and coloured by its age (red in the past hour, orange in the past day, gold before
+  that), the newest pulsing. Together they trace the plates' edges: the Ring of Fire round the Pacific, the mid-Atlantic
+  ridge. Tap one for how strong it was, where, how long ago and how deep, with a link to its USGS page (the strongest are
+  also buttons for the keyboard). Some 600 ripples are drawn on a canvas of their own, a few paths per colour, so a
+  turning globe redraws them for little.
 - **The ISS, live, worked out in the browser.** The station's orbital elements (a TLE, fetched every few hours) are
   propagated on the page — a compact SGP4: J2's turning of the orbit's plane and perigee, drag, Greenwich sidereal time,
   the WGS-84 ellipsoid — to within about 10 km of NASA-grade trackers for a day, so it moves across the globe with its
@@ -102,7 +104,7 @@ Then open the printed local address (usually http://localhost:5173). The globe o
 prefer reduced motion); drag to turn it yourself, pinch, scroll or use the `+` / `−` at its bottom right (top right on a
 phone) to zoom, the arrow keys to move, and click a city for its details (on a phone they open as a sheet at the bottom). Press `/` (or click the box at the top left) to find a place, and click the
 ISS for where it is and the song of the day. ♪ Music, in the middle of the top bar, turns on the music. Beside it, the
-Regions menu flies to a part of the world; Globe starts or stops the turning; ISS rides along with the station on its
+Regions menu flies to any of the seven continents (and your favourite cities); Globe starts or stops the turning; ISS rides along with the station on its
 time-lapse (the globe turning beneath it); the Layers menu toggles the clouds, the wind and the ISS; and °F / °C
 switches units (°F to start). The ⓘ at the bottom right says what each layer shows now and links every source.
 
