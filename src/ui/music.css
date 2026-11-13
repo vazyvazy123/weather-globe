@@ -76,7 +76,9 @@
 /* the bars scale (the compositor's work), never resize (which would lay out and repaint them every frame) */
 @keyframes eq { from { transform: scaleY(0.2); } to { transform: scaleY(1); } }
 
-.dock-now { display: grid; grid-template-columns: 84px 1fr; gap: 14px; align-items: center; margin-top: 12px; animation: now-in 420ms ease-out; }
+/* the cover, the song and its heart, at the right edge as the close button above it */
+.dock-now { display: grid; grid-template-columns: 84px 1fr auto; gap: 14px; align-items: center; margin-top: 12px; animation: now-in 420ms ease-out; }
+.dock-now .heart { margin-right: -6px; }
 .dock-now.empty { grid-template-columns: 1fr; }
 @keyframes now-in { from { opacity: 0; transform: translateX(-10px); } }
 .dock-cover { display: block; width: 84px; height: 84px; border-radius: 12px; object-fit: cover;
@@ -156,8 +158,8 @@
 .dock-credit { margin: 8px 0 0; font-size: 10px; text-align: center; color: var(--ink-4); }
 .dock-credit a { color: var(--ink-3); }
 
-/* folded: a slim bar, the cover turning like a record */
-.dock.folded { display: flex; align-items: center; gap: 12px; width: 330px; padding: 10px 10px 10px 12px; border-radius: 20px; }
+/* folded: a slim bar, the cover turning like a record (wide enough for the song's heart beside the play button) */
+.dock.folded { display: flex; align-items: center; gap: 12px; width: 350px; padding: 10px 10px 10px 12px; border-radius: 20px; }
 .disc { position: relative; flex: none; width: 46px; height: 46px; border-radius: 50%; overflow: hidden; overflow: clip;
   background: repeating-radial-gradient(circle, #0c0d14 0 1px, #1d1f2c 1px 3px); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
   animation: spin 3.2s linear infinite; animation-play-state: paused; }
@@ -179,8 +181,12 @@
 .songs { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .songs h3 { margin: 0 0 6px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #f4b942; }
 .songs ul { max-height: min(36vh, 240px); margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+/* each song a button, its heart beside it (a button can hold no other) */
+.songs li { display: flex; align-items: center; gap: 2px; }
 .songs li + li { margin-top: 2px; }
-.song { display: grid; grid-template-columns: 36px 1fr 18px; align-items: center; gap: 10px; width: 100%; padding: 5px 6px; border-radius: 10px; text-align: left; transition: background-color 140ms; }
+/* (inside the list, which scrolls and so clips: the heart's ring drawn within it) */
+.songs .heart:focus-visible { outline-offset: -2px; }
+.song { display: grid; grid-template-columns: 36px 1fr 18px; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 5px 6px; border-radius: 10px; text-align: left; transition: background-color 140ms; }
 .song:hover { background: rgba(255, 255, 255, 0.06); }
 .song.on { background: rgba(244, 185, 66, 0.12); }
 .song-art { display: block; width: 36px; height: 36px; border-radius: 7px; object-fit: cover; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); }
@@ -188,7 +194,7 @@
 .song-meta b, .song-meta span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .song-meta b { font-size: 12.5px; color: var(--ink-1); }
 .song-meta span { font-size: 11px; color: var(--ink-3); }
-.song .ic { width: 16px; height: 16px; color: var(--ink-3); }
+.song .ic { width: 16px; height: 16px; color: var(--ink-3); fill: currentColor; }
 .song .eq i { background: #f4b942; }
 
 @media (max-height: 760px) { .dock-deck { max-width: 230px; margin-top: 10px; } }
@@ -200,7 +206,7 @@
   .panel-open .dock { visibility: hidden; }
   .dock.folded { width: auto; }
   .dock-deck { max-width: 210px; }
-  .dock-now { grid-template-columns: 64px 1fr; }
+  .dock-now { grid-template-columns: 64px 1fr auto; }
   .dock-cover { width: 64px; height: 64px; }
 }
 /* a phone on its side: the player at the bottom left as on a computer, clear of the zoom at the bottom right */

@@ -8,9 +8,10 @@ import { countryName, MUSIC_CITIES, TRACKS, tracksForCity, WORLD_ORDER } from ".
 import { useFresh, useWeather, type Source } from "../data/useWeather"
 import { ISS_EVERY_MS, fetchIssTle, parseIssTle, type IssTle } from "../data/iss"
 import { QUAKE_EVERY_MS, fetchQuakes, validFeed, type QuakeFeed } from "../data/quakes"
-import { FAVORITES_KEY, MAX_FAVORITES, readFavorites, toggleFavorite } from "../data/favorites"
+import { FAVORITE_SONGS_KEY, FAVORITES_KEY, MAX_FAVORITE_SONGS, MAX_FAVORITES } from "../data/favorites"
 import { QuakeKeys, QuakeLegend, QuakePanel } from "./QuakePanel"
-import { FavoritesPanel, type FavoriteRow } from "./FavoritesPanel"
+import { FavoritesPanel, type FavoriteRow, type FavoriteSongRow } from "./FavoritesPanel"
+import { useFavorites } from "./useFavorites"
 import { dayStartOf, songOfDay } from "../data/songOfDay"
 import type { PlaceHit } from "../data/places"
 import { fetchPoint } from "../data/weather"
@@ -52,9 +53,10 @@ const MUSIC_ZOOM = 2
 /** the room labels keep from the panels */
 const PANEL_MARGIN_PX = 6
 const CITY_BY_ID = new Map(CITIES.map((c) => [c.id, c]))
-// the viewer's favourite cities, kept in this browser alone
+// the viewer's favourite cities and songs, kept in this browser alone (useFavorites.ts)
 const CITY_IDS = new Set(CITY_BY_ID.keys())
-const readStoredFavorites = (): string[] => { try { return readFavorites(globalThis.localStorage?.getItem(FAVORITES_KEY) ?? null, CITY_IDS) } catch { return [] } }
+const TRACK_BY_ID = new Map(TRACKS.map((t) => [t.id, t]))
+const TRACK_IDS = new Set(TRACK_BY_ID.keys())
 
 const readUnit = (): Unit => { try { return globalThis.localStorage?.getItem(UNIT_KEY) === "C" ? "C" : "F" } catch { return "F" } }
 // the wind shows from the start, as the ISS does, unless the viewer turned it off
@@ -136,22 +138,14 @@ export function App() {
   const [showWind, setShowWind] = useState(readWind)
   const [showIss, setShowIss] = useState(readIss)
   const [issOpen, setIssOpen] = useState(false)
-  const [favorites, setFavorites] = useState(readStoredFavorites)
+  const { ids: favorites, toggle: switchFavorite } = useFavorites(FAVORITES_KEY, CITY_IDS, MAX_FAVORITES)
+  // the songs hearted (in a city's list or the player), listed after the cities in the favourites' panel
+  const favSongs = useFavorites(FAVORITE_SONGS_KEY, TRACK_IDS, MAX_FAVORITE_SONGS)
   // the favourites' own panel (the ★ chip), which any other panel opening closes
   const [favOpen, setFavOpen] = useState(false)
   // closing the favourites hands the keyboard's focus back to the chip that opens them
   const favChip = useRef<HTMLButtonElement>(null)
   const closeFavorites = () => { setFavOpen(false); favChip.current?.focus() }
-  const switchFavorite = useCallback((id: string) => setFavorites((list) => toggleFavorite(list, id)), [])
-  useEffect(() => {
-    try { globalThis.localStorage?.setItem(FAVORITES_KEY, JSON.stringify(favorites)) } catch { /* the favourites last this visit only */ }
-  }, [favorites])
-  // favourites changed in another tab of this browser come here too
-  useEffect(() => {
-    const changed = (e: StorageEvent) => { if (e.key === FAVORITES_KEY) setFavorites(readFavorites(e.newValue, CITY_IDS)) }
-    window.addEventListener("storage", changed)
-    return () => window.removeEventListener("storage", changed)
-  }, [])
   const [showQuakes, setShowQuakes] = useState(readQuakes)
   const [quakeId, setQuakeId] = useState<string | null>(null)
   const [followMode, setFollowMode] = useState<FollowMode | null>(null)
@@ -370,6 +364,10 @@ export function App() {
     return [{ id, name: c.name, country: countryName(c.country), temp: t != null ? tempText(t, unit) : null, tempF: t != null ? cToF(t) : null,
       sky: w ? skyLabel(w.sky) : "", localTime: w?.utcOffsetS != null ? localTime(now, w.utcOffsetS) : null }]
   })), [favOpen, favorites, byId, unit, now])
+  const favSongRows = useMemo((): FavoriteSongRow[] => (!favOpen ? [] : favSongs.ids.flatMap((id) => {
+    const t = TRACK_BY_ID.get(id), c = t && CITY_BY_ID.get(t.city)
+    return t && c ? [{ track: t, city: c.name, country: countryName(c.country) }] : []
+  })), [favOpen, favSongs.ids])
   const avoid = useMemo(() => [...grow(showDock ? dockBox : null, PANEL_MARGIN_PX), ...grow(panelShown ? panelBox : null, PANEL_MARGIN_PX), ...grow(searchBox, PANEL_MARGIN_PX),
     ...grow(cornerBox, PANEL_MARGIN_PX), ...grow(zoomBox, PANEL_MARGIN_PX)], [showDock, dockBox, panelShown, panelBox, searchBox, cornerBox, zoomBox])
   // what each layer shows now (in the ⓘ card), and what went wrong (small notes at the bottom left)
@@ -403,7 +401,7 @@ export function App() {
             }),
             ...REGIONS.map(([name, cam]) => ({ key: name, label: name, onSelect: () => controller.flyTo(cam) })),
           ]} />
-          <button ref={favChip} type="button" className={`chip chip-fav${favOpen ? " on" : ""}`} aria-pressed={favOpen} aria-label="Favorites" title="Your favorite cities"
+          <button ref={favChip} type="button" className={`chip chip-fav${favOpen ? " on" : ""}`} aria-pressed={favOpen} aria-label="Favorites" title="Your favorite cities and songs"
             onClick={switchFavPanel}>
             <span className="fav-star" aria-hidden="true">★</span><span className="chip-text"> Favorites</span>
           </button>
@@ -432,10 +430,11 @@ export function App() {
           <button type="button" className="zoom-button" aria-label="Zoom out" onClick={() => controller.set(zoomed(controller.camera, 1 / 1.5))}>−</button>
         </div>
         {issPanel ? (
-          <IssPanel el={issLive} pick={dayPick} unit={unit} music={music} mode={followMode} clock={issClock} onFollow={follow}
+          <IssPanel el={issLive} pick={dayPick} unit={unit} music={music} favs={favSongs} mode={followMode} clock={issClock} onFollow={follow}
             onFly={findCity} onClose={() => { setIssOpen(false); follow(null) }} boxRef={panelRef} />
         ) : favOpen ? (
-          <FavoritesPanel rows={favRows} onOpen={findCity} onRemove={switchFavorite} onClose={closeFavorites} boxRef={panelRef} />
+          <FavoritesPanel rows={favRows} songs={favSongRows} music={music} onOpen={findCity} onRemove={switchFavorite} onRemoveSong={favSongs.toggle}
+            onClose={closeFavorites} boxRef={panelRef} />
         ) : city ? (
           <aside ref={panelRef} className="panel" aria-label={`${city.name} weather`}>
             <button type="button" className="close" aria-label="Close" onClick={() => setSelected(null)}>×</button>
@@ -450,7 +449,7 @@ export function App() {
             <p>{skyLabel(cw?.sky)}{cw?.cloudPct != null ? ` · ${Math.round(cw.cloudPct)}% cloud cover` : ""}</p>
             {cw?.utcOffsetS != null && <p className="dim">Local time {localTime(now, cw.utcOffsetS)}</p>}
             <p className="dim">{city.lat.toFixed(2)}°, {city.lon.toFixed(2)}°{cw?.atMs != null ? ` · read ${utcTime(cw.atMs)}` : ""}</p>
-            <SongList tracks={citySongs} music={music} country={countryName(city.country)} />
+            <SongList tracks={citySongs} music={music} favs={favSongs} country={countryName(city.country)} />
           </aside>
         ) : pin ? (
           <aside ref={panelRef} className="panel" aria-label={`${pin.name} weather`}>
@@ -466,7 +465,7 @@ export function App() {
         ) : quake ? (
           <QuakePanel quake={quake} unit={unit} now={now} onClose={closeQuake} boxRef={panelRef} focusOnOpen={quakeFromKeys} />
         ) : null}
-        {showDock && <MusicDock music={music} place={place} onClose={closeMusic} onFind={findCity} boxRef={dockRef} daySong={dayPick?.track ?? null} />}
+        {showDock && <MusicDock music={music} favs={favSongs} place={place} onClose={closeMusic} onFind={findCity} boxRef={dockRef} daySong={dayPick?.track ?? null} />}
         <footer className="caption">
           {warnings.map((w) => <div key={w} className="toast warn">{w}</div>)}
           {windOn && windFrame && <WindLegend unit={unit} />}

@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from "react"
 import { youtubeSearchUrl, type Track } from "../data/music"
 import { Cassette } from "./Cassette"
+import type { Favorites } from "./useFavorites"
 import type { Music, PlayStatus } from "./useMusic"
 
 // The music player over the globe: the song's cover glowing behind a glass card, the cover itself, the singer's photo,
 // where the song is from (with the weather there now), the cassette playing it, the time, and the controls. Folded, it
 // is a slim bar with the cover spinning like a record. Empty, it offers a world shuffle and the song of the day.
-// The previews are Apple's 30-second clips; each song links to its full version on Apple Music and YouTube.
+// The previews are Apple's 30-second clips; each song links to its full version on Apple Music and YouTube. A heart
+// beside the song playing (and beside each song of a city's list) keeps it among the viewer's favourites.
 
 export interface Place { id: string; name: string; country: string; temp: string | null; time: string | null }
 
 interface Props {
   music: Music
+  /** the viewer's favourite songs: the song playing has its heart */
+  favs: Favorites
   place: Place | null
   onClose: () => void
   /** fly the globe to the song's city */
@@ -104,7 +108,21 @@ function Volume({ music }: { music: Music }) {
 
 const Eq = ({ on }: { on: boolean }) => <span className={`eq${on ? " on" : ""}`} aria-hidden="true"><i /><i /><i /><i /></span>
 
-export function MusicDock({ music, place, onClose, onFind, boxRef, daySong = null }: Props) {
+/** the heart filled, asked for as text: as an emoji some phones draw it red, deaf to the gold it is given */
+export const HEART_ON = "\u2665\uFE0E"
+
+/** A song's heart (as a city's star, in gold): on, the song is a favourite, listed under ★ Favorites; a tap adds it or
+ *  takes it out. Off and the list full, it waits for one to go. */
+function Heart({ track, favs }: { track: Track; favs: Favorites }) {
+  const on = favs.ids.includes(track.id), full = !on && favs.ids.length >= favs.max
+  return (
+    <button type="button" className={`heart${on ? " on" : ""}`} aria-pressed={on} aria-label={`Favorite: ${track.title} by ${track.artist}`} disabled={full}
+      title={on ? "A favorite: listed under ★ Favorites (click to remove)" : full ? `${favs.max} favorite songs at most: remove one first` : "Add to your favorite songs"}
+      onClick={() => favs.toggle(track.id)}>{on ? HEART_ON : "♡"}</button>
+  )
+}
+
+export function MusicDock({ music, favs, place, onClose, onFind, boxRef, daySong = null }: Props) {
   const { track, status, audio } = music
   // on a phone the open player would cover the song's city: it starts folded
   const [folded, setFolded] = useState(() => typeof window !== "undefined" && window.matchMedia?.(NARROW).matches === true)
@@ -140,6 +158,7 @@ export function MusicDock({ music, place, onClose, onFind, boxRef, daySong = nul
           <b>{track?.title ?? "World Mixtape"}</b>
           <span>{track ? `${track.artist}${place ? ` · ${place.name}` : ""}` : "Tap a ♪ city to play"}</span>
         </div>
+        {track && <Heart track={track} favs={favs} />}
         {playBtn}
         <button ref={openBtn} type="button" className="dock-icon" onClick={() => fold(false)} aria-label="Open the player"><Icon d={I.unfold} /></button>
       </section>
@@ -176,6 +195,7 @@ export function MusicDock({ music, place, onClose, onFind, boxRef, daySong = nul
               {place?.temp && <span className="tag weather">{place.temp}{place.time ? ` · ${place.time}` : ""}</span>}
             </p>
           </div>
+          <Heart track={track} favs={favs} />
         </div>
       ) : (
         <div className="dock-now empty">
@@ -229,27 +249,34 @@ export function MusicDock({ music, place, onClose, onFind, boxRef, daySong = nul
   )
 }
 
-/** A city's songs, for its weather panel: tap one to play it. `title` names the list (null: none). */
-export function SongList({ tracks, music, country, title }: { tracks: readonly Track[]; music: Music; country: string; title?: string | null }) {
+/** A song to tap: it plays, or (playing) pauses. Its second line is `sub` (the singer, unless given); `where` ends what
+ *  a screen reader hears of it. */
+export function SongButton({ track, music, sub = track.artist, where = "" }: { track: Track; music: Music; sub?: string; where?: string }) {
+  const on = music.track?.id === track.id, playing = on && music.status === "playing"
+  return (
+    <button type="button" className={`song${on ? " on" : ""}`} onClick={() => (on ? music.toggle() : music.playId(track.id))}
+      aria-label={`${playing ? "Pause" : "Play"} ${track.title} by ${track.artist}${where}`}>
+      <Pic src={track.cover} className="song-art" />
+      <span className="song-meta"><b>{track.title}</b><span>{sub}</span></span>
+      {playing ? <Eq on /> : <Icon d={I.play} />}
+    </button>
+  )
+}
+
+/** A city's songs, for its weather panel: tap one to play it, its heart to keep it. `title` names the list (null: none). */
+export function SongList({ tracks, music, favs, country, title }: { tracks: readonly Track[]; music: Music; favs: Favorites; country: string; title?: string | null }) {
   if (!tracks.length) return null
   const heading = title === undefined ? `♪ Music from ${country}` : title
   return (
     <section className="songs" aria-label={heading ?? `Music from ${country}`}>
       {heading != null && <h3>{heading}</h3>}
       <ul>
-        {tracks.map((tr) => {
-          const on = music.track?.id === tr.id
-          return (
-            <li key={tr.id}>
-              <button type="button" className={`song${on ? " on" : ""}`} onClick={() => (on ? music.toggle() : music.playId(tr.id))}
-                aria-label={`${on && music.status === "playing" ? "Pause" : "Play"} ${tr.title} by ${tr.artist}`}>
-                <Pic src={tr.cover} className="song-art" />
-                <span className="song-meta"><b>{tr.title}</b><span>{tr.artist}</span></span>
-                {on && music.status === "playing" ? <Eq on /> : <Icon d={I.play} />}
-              </button>
-            </li>
-          )
-        })}
+        {tracks.map((tr) => (
+          <li key={tr.id}>
+            <SongButton track={tr} music={music} />
+            <Heart track={tr} favs={favs} />
+          </li>
+        ))}
       </ul>
     </section>
   )
