@@ -10,6 +10,7 @@ import { ISS_EVERY_MS, fetchIssTle, parseIssTle, type IssTle } from "../data/iss
 import { QUAKE_EVERY_MS, fetchQuakes, validFeed, type QuakeFeed } from "../data/quakes"
 import { FAVORITES_KEY, MAX_FAVORITES, readFavorites, toggleFavorite } from "../data/favorites"
 import { QuakeKeys, QuakeLegend, QuakePanel } from "./QuakePanel"
+import { FavoritesPanel, type FavoriteRow } from "./FavoritesPanel"
 import { dayStartOf, songOfDay } from "../data/songOfDay"
 import type { PlaceHit } from "../data/places"
 import { fetchPoint } from "../data/weather"
@@ -136,6 +137,11 @@ export function App() {
   const [showIss, setShowIss] = useState(readIss)
   const [issOpen, setIssOpen] = useState(false)
   const [favorites, setFavorites] = useState(readStoredFavorites)
+  // the favourites' own panel (the ★ chip), which any other panel opening closes
+  const [favOpen, setFavOpen] = useState(false)
+  // closing the favourites hands the keyboard's focus back to the chip that opens them
+  const favChip = useRef<HTMLButtonElement>(null)
+  const closeFavorites = () => { setFavOpen(false); favChip.current?.focus() }
   const switchFavorite = useCallback((id: string) => setFavorites((list) => toggleFavorite(list, id)), [])
   useEffect(() => {
     try { globalThis.localStorage?.setItem(FAVORITES_KEY, JSON.stringify(favorites)) } catch { /* the favourites last this visit only */ }
@@ -259,6 +265,7 @@ export function App() {
     setPin(null)
     setIssOpen(false)
     setQuakeId(null)
+    setFavOpen(false)
     flyToCity(id, CITY_ZOOM)
     // with the music on, a city plays its first song (unless one of its songs is on already)
     if (!musicMode) return
@@ -279,7 +286,9 @@ export function App() {
   // closing the player hands the keyboard focus back to the chip that opens it
   const musicChip = useRef<HTMLButtonElement>(null)
   const closeMusic = useCallback(() => { musicChip.current?.focus(); stop(); setMusicMode(false) }, [stop])
-  const findCity = useCallback((id: string) => { setSelected(id); setPin(null); setIssOpen(false); setQuakeId(null); flyToCity(id, CITY_ZOOM) }, [flyToCity])
+  const findCity = useCallback((id: string) => {
+    setSelected(id); setPin(null); setIssOpen(false); setQuakeId(null); setFavOpen(false); flyToCity(id, CITY_ZOOM)
+  }, [flyToCity])
 
   // a place found by the search: a city opens as if clicked; a country or another place is flown to (a place with a pin
   // and its weather now)
@@ -288,6 +297,7 @@ export function App() {
     setSelected(null)
     setIssOpen(false)
     setQuakeId(null)
+    setFavOpen(false)
     setPin(hit.kind === "place" ? hit : null)
     controller.flyTo({ lon: hit.lon, lat: clampLat(hit.lat), zoom: Math.max(controller.camera.zoom, hit.kind === "country" ? COUNTRY_ZOOM : PLACE_ZOOM) })
   }, [controller, onCity])
@@ -300,7 +310,11 @@ export function App() {
   }, [pin])
   const pinMark = useMemo(() => (pin ? { lat: pin.lat, lon: pin.lon, name: pin.name } : null), [pin])
 
-  const openIss = useCallback(() => { setIssOpen(true); setSelected(null); setPin(null); setQuakeId(null) }, [])
+  const openIss = useCallback(() => { setIssOpen(true); setSelected(null); setPin(null); setQuakeId(null); setFavOpen(false) }, [])
+  const switchFavPanel = () => {
+    if (!favOpen) { setSelected(null); setPin(null); setIssOpen(false); setQuakeId(null) }
+    setFavOpen(!favOpen)
+  }
   // a quake's ring tapped (or picked from the keyboard's list): its card, the globe flown to it
   const quakesRef = useRef(quakes)
   quakesRef.current = quakes
@@ -312,6 +326,7 @@ export function App() {
     setSelected(null)
     setPin(null)
     setIssOpen(false)
+    setFavOpen(false)
     controller.flyTo({ lon: q.lon, lat: clampLat(q.lat), zoom: Math.max(controller.camera.zoom, QUAKE_ZOOM) })
   }, [controller])
   const pickQuakeByKey = useCallback((id: string) => { pickQuake(id); setQuakeFromKeys(true) }, [pickQuake])
@@ -346,7 +361,15 @@ export function App() {
   }, [trackCity, byId, unit, now])
   const showDock = musicMode || music.track != null
   const issPanel = issOpen && issLive != null
-  const panelShown = issPanel || city != null || pin != null || quake != null
+  const panelShown = issPanel || favOpen || city != null || pin != null || quake != null
+  // the favourites with their weather now, for their panel
+  const favRows = useMemo((): FavoriteRow[] => (!favOpen ? [] : favorites.flatMap((id) => {
+    const c = CITY_BY_ID.get(id)
+    if (!c) return []
+    const w = byId.get(id), t = w?.tempC
+    return [{ id, name: c.name, country: countryName(c.country), temp: t != null ? tempText(t, unit) : null, tempF: t != null ? cToF(t) : null,
+      sky: w ? skyLabel(w.sky) : "", localTime: w?.utcOffsetS != null ? localTime(now, w.utcOffsetS) : null }]
+  })), [favOpen, favorites, byId, unit, now])
   const avoid = useMemo(() => [...grow(showDock ? dockBox : null, PANEL_MARGIN_PX), ...grow(panelShown ? panelBox : null, PANEL_MARGIN_PX), ...grow(searchBox, PANEL_MARGIN_PX),
     ...grow(cornerBox, PANEL_MARGIN_PX), ...grow(zoomBox, PANEL_MARGIN_PX)], [showDock, dockBox, panelShown, panelBox, searchBox, cornerBox, zoomBox])
   // what each layer shows now (in the ⓘ card), and what went wrong (small notes at the bottom left)
@@ -380,6 +403,10 @@ export function App() {
             }),
             ...REGIONS.map(([name, cam]) => ({ key: name, label: name, onSelect: () => controller.flyTo(cam) })),
           ]} />
+          <button ref={favChip} type="button" className={`chip chip-fav${favOpen ? " on" : ""}`} aria-pressed={favOpen} aria-label="Favorites" title="Your favorite cities"
+            onClick={switchFavPanel}>
+            <span className="fav-star" aria-hidden="true">★</span><span className="chip-text"> Favorites</span>
+          </button>
           <button type="button" className={`chip${touring ? " on" : ""}`} aria-pressed={touring} title="Turn the globe slowly"
             onClick={() => { tourAsked.current = !touring; controller.setTouring(!touring) }}>Globe</button>
           <button type="button" className={`chip${followMode ? " on" : ""}`} aria-pressed={followMode != null} title="Ride along with the International Space Station"
@@ -407,6 +434,8 @@ export function App() {
         {issPanel ? (
           <IssPanel el={issLive} pick={dayPick} unit={unit} music={music} mode={followMode} clock={issClock} onFollow={follow}
             onFly={findCity} onClose={() => { setIssOpen(false); follow(null) }} boxRef={panelRef} />
+        ) : favOpen ? (
+          <FavoritesPanel rows={favRows} onOpen={findCity} onRemove={switchFavorite} onClose={closeFavorites} boxRef={panelRef} />
         ) : city ? (
           <aside ref={panelRef} className="panel" aria-label={`${city.name} weather`}>
             <button type="button" className="close" aria-label="Close" onClick={() => setSelected(null)}>×</button>
