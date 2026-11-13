@@ -62,9 +62,9 @@ const readWind = (): boolean => { try { return globalThis.localStorage?.getItem(
 const ISS_KEY = "weather-globe:iss-on"
 const readIss = (): boolean => { try { return globalThis.localStorage?.getItem(ISS_KEY) !== "0" } catch { return true } }
 const ISS_SOURCE: Source<IssTle> = { key: "weather-globe:iss-tle:v1", everyMs: ISS_EVERY_MS, read: fetchIssTle, valid: (v) => parseIssTle(v) != null }
-// the earthquakes show from the start too, unless the viewer turned them off; a quake opened comes this close
+// the earthquakes show once the viewer turns them on (Layers), and stay on for them; a quake opened comes this close
 const QUAKES_KEY = "weather-globe:quakes-on"
-const readQuakes = (): boolean => { try { return globalThis.localStorage?.getItem(QUAKES_KEY) !== "0" } catch { return true } }
+const readQuakes = (): boolean => { try { return globalThis.localStorage?.getItem(QUAKES_KEY) === "1" } catch { return false } }
 const QUAKE_SOURCE: Source<QuakeFeed> = { key: "weather-globe:quakes:v1", everyMs: QUAKE_EVERY_MS, read: fetchQuakes, valid: validFeed }
 const QUAKE_ZOOM = 2.4
 /** a country found comes this close, a place found this close */
@@ -395,7 +395,7 @@ export function App() {
         <button ref={musicChip} type="button" className={`chip chip-music${musicMode ? " on" : ""}`} aria-pressed={musicMode} onClick={() => setMusicMode((v) => !v)}
           title="Songs from around the world">♪ Music</button>
         <nav className="tools" aria-label="Globe controls">
-          <Menu label="Regions" title={favorites.length ? "Fly to a favorite city or a part of the world" : "Fly to a part of the world"} align="start" items={[
+          <Menu label="Regions" title={favorites.length ? "Fly to a favorite city or a continent" : "Fly to a continent"} align="start" items={[
             // the favourites first, each opening its city
             ...favorites.flatMap((id) => {
               const c = CITY_BY_ID.get(id)
