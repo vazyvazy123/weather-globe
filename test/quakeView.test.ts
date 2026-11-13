@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { ageBand, groundEllipse, hitQuake, quakeRadiusPx, QUAKE_AGES } from "../src/globe/quakeView"
+import { ageBand, groundEllipse, hitQuake, outerRadiusPx, quakeRadiusPx, ringsFor, QUAKE_AGES } from "../src/globe/quakeView"
 
 const HOUR = 3600_000
 
@@ -9,6 +9,13 @@ describe("a quake's ring", () => {
     for (let i = 1; i < sizes.length; i++) expect(sizes[i]).toBeGreaterThan(sizes[i - 1])
     expect(quakeRadiusPx(9.5, 1)).toBe(quakeRadiusPx(10, 1))
     expect(quakeRadiusPx(1, 1)).toBe(quakeRadiusPx(2.5, 1))
+  })
+
+  test("ripples out like waves from a stone: one ring for a small quake, two from 4.5, three from 6", () => {
+    expect([2.5, 4.4, 4.5, 5.9, 6, 7.8].map(ringsFor)).toEqual([1, 1, 2, 2, 3, 3])
+    expect(outerRadiusPx(3, 1)).toBe(quakeRadiusPx(3, 1))
+    expect(outerRadiusPx(5, 1)).toBeGreaterThan(quakeRadiusPx(5, 1))
+    expect(outerRadiusPx(6.5, 1)).toBeGreaterThan(outerRadiusPx(5.9, 1))
   })
 
   test("grows a little as the globe is zoomed in, not without end", () => {
