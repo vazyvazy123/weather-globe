@@ -17,8 +17,8 @@
 .pc-note { color: #f4b942; font-size: 12px; line-height: 1; margin-right: -2px; }
 .pill-city.noted { border-color: rgba(244, 185, 66, 0.55); box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4), 0 0 12px rgba(244, 185, 66, 0.18); }
 .pill-city.playing { border-color: #f4b942; color: var(--ink-1); background: linear-gradient(90deg, rgba(228, 87, 46, 0.32), rgba(8, 11, 32, 0.9) 70%); }
-.music-mode .pill-city:not(.noted):not(.selected) { opacity: 0.55; }
-.music-mode .pill-city:not(.noted):not(.selected):hover { opacity: 1; }
+.music-mode .pill-city:not(.noted):not(.selected) { opacity: calc(0.55 * var(--fade, 1)); }
+.music-mode .pill-city:not(.noted):not(.selected):hover { opacity: var(--fade, 1); }
 
 .pc-eq { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 10px; margin-right: 0; }
 .pc-eq i { width: 2px; height: 100%; border-radius: 1px; background: #f4b942; transform: scaleY(0.4); transform-origin: bottom; animation: eq 780ms ease-in-out infinite alternate; }

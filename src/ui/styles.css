@@ -76,7 +76,8 @@ a { color: var(--ink-2); }
 .globe-fallback .land { fill: #2b5d4c; stroke: #5d9a80; stroke-width: 0.6; fill-rule: evenodd; }
 
 /* city markers: a ring lying on the ground (it tilts with the globe), a glow where it is night */
-.city { cursor: pointer; }
+/* (--fade: near the horizon a city's marker and label fade, Globe.tsx) */
+.city { cursor: pointer; opacity: var(--fade, 1); }
 .city .hit { fill: transparent; }
 .city .citylight { fill: url(#g-citylight); }
 .city .ring { fill: rgba(235, 230, 246, 0.22); stroke: rgba(235, 230, 246, 0.9); stroke-width: 1px; stroke-linejoin: round; }
@@ -87,10 +88,14 @@ a { color: var(--ink-2); }
 /* the label pills: name and temperature (cold → hot colour) */
 .pill-city { position: absolute; left: 0; top: 0; pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; height: 21px; padding: 0 8px;
   border-radius: 11px; background: rgba(8, 11, 32, 0.84); border: 1px solid rgba(141, 151, 220, 0.3); color: var(--ink-2); font-size: 12px; font-weight: 600;
-  white-space: nowrap; overflow: hidden; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); transition: border-color 160ms, background-color 160ms, color 160ms; }
+  white-space: nowrap; overflow: hidden; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); transition: border-color 160ms, background-color 160ms, color 160ms;
+  opacity: var(--fade, 1); }
 .pill-city:hover { background: rgba(22, 28, 70, 0.94); color: var(--ink-1); }
 .pill-city.selected { border-color: var(--accent); color: var(--ink-1); }
 .pc-name { overflow: hidden; text-overflow: ellipsis; }
+/* a favourite's star, before its name (and alone in its compact chip's place: the chip keeps it) */
+.pc-fav { flex: none; margin-right: -2px; font-size: 11px; line-height: 1; color: var(--accent); }
+.pill-city.compact .pc-fav { margin-right: 3px; }
 .pc-temp { font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--tc); background: color-mix(in srgb, var(--tc) 16%, transparent); border-radius: 4px; padding: 0 4px; }
 
 /* the selected city (or place, or the ISS): over the player; taller than the stage leaves it, it scrolls, clear of the
@@ -106,6 +111,13 @@ a { color: var(--ink-2); }
 .panel .close { position: sticky; top: 0; z-index: 1; float: right; width: 24px; height: 24px; margin: -6px -8px 0 6px; border-radius: 12px;
   background: rgba(6, 8, 26, 0.9); font-size: 18px; line-height: 1; color: var(--ink-3); }
 .panel .close:hover { color: var(--ink-1); }
+/* a city's star, beside its close button: a favourite is always shown, and listed in the Regions menu */
+.panel .fav { position: sticky; top: 0; z-index: 1; float: right; width: 24px; height: 24px; margin: -6px 0 0 4px; border-radius: 12px;
+  background: rgba(6, 8, 26, 0.9); font-size: 15px; line-height: 1; color: var(--ink-3); }
+.panel .fav:hover, .panel .fav.on { color: var(--accent); }
+.panel .fav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.panel .fav:disabled { opacity: 0.4; cursor: default; }
+.menu-star { display: inline-block; width: 14px; font-size: 12px; color: var(--accent); }
 
 /* what is drawn and where it comes from */
 .caption { position: absolute; left: 16px; right: 16px; bottom: 12px; display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--ink-3);
@@ -277,6 +289,7 @@ a { color: var(--ink-2); }
   .zoom-button { width: 40px; height: 40px; font-size: 20px; }
   .info-button { width: 30px; height: 30px; font-size: 14px; line-height: 28px; }
   .panel .close { width: 36px; height: 36px; margin: -8px -10px 0 6px; border-radius: 18px; font-size: 22px; }
+  .panel .fav { width: 36px; height: 36px; margin: -8px 0 0 2px; border-radius: 18px; font-size: 19px; }
   .menu-item { padding: 10px 12px; font-size: 14px; }
   .search-list li { padding: 10px; }
   .iss-speed .chip { height: 30px; }

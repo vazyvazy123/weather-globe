@@ -8,6 +8,7 @@ import { countryName, MUSIC_CITIES, TRACKS, tracksForCity, WORLD_ORDER } from ".
 import { useFresh, useWeather, type Source } from "../data/useWeather"
 import { ISS_EVERY_MS, fetchIssTle, parseIssTle, type IssTle } from "../data/iss"
 import { QUAKE_EVERY_MS, fetchQuakes, validFeed, type QuakeFeed } from "../data/quakes"
+import { FAVORITES_KEY, MAX_FAVORITES, readFavorites, toggleFavorite } from "../data/favorites"
 import { QuakeKeys, QuakeLegend, QuakePanel } from "./QuakePanel"
 import { dayStartOf, songOfDay } from "../data/songOfDay"
 import type { PlaceHit } from "../data/places"
@@ -50,6 +51,9 @@ const MUSIC_ZOOM = 2
 /** the room labels keep from the panels */
 const PANEL_MARGIN_PX = 6
 const CITY_BY_ID = new Map(CITIES.map((c) => [c.id, c]))
+// the viewer's favourite cities, kept in this browser alone
+const CITY_IDS = new Set(CITY_BY_ID.keys())
+const readStoredFavorites = (): string[] => { try { return readFavorites(globalThis.localStorage?.getItem(FAVORITES_KEY) ?? null, CITY_IDS) } catch { return [] } }
 
 const readUnit = (): Unit => { try { return globalThis.localStorage?.getItem(UNIT_KEY) === "C" ? "C" : "F" } catch { return "F" } }
 // the wind shows from the start, as the ISS does, unless the viewer turned it off
@@ -131,6 +135,17 @@ export function App() {
   const [showWind, setShowWind] = useState(readWind)
   const [showIss, setShowIss] = useState(readIss)
   const [issOpen, setIssOpen] = useState(false)
+  const [favorites, setFavorites] = useState(readStoredFavorites)
+  const switchFavorite = useCallback((id: string) => setFavorites((list) => toggleFavorite(list, id)), [])
+  useEffect(() => {
+    try { globalThis.localStorage?.setItem(FAVORITES_KEY, JSON.stringify(favorites)) } catch { /* the favourites last this visit only */ }
+  }, [favorites])
+  // favourites changed in another tab of this browser come here too
+  useEffect(() => {
+    const changed = (e: StorageEvent) => { if (e.key === FAVORITES_KEY) setFavorites(readFavorites(e.newValue, CITY_IDS)) }
+    window.addEventListener("storage", changed)
+    return () => window.removeEventListener("storage", changed)
+  }, [])
   const [showQuakes, setShowQuakes] = useState(readQuakes)
   const [quakeId, setQuakeId] = useState<string | null>(null)
   const [followMode, setFollowMode] = useState<FollowMode | null>(null)
@@ -201,12 +216,15 @@ export function App() {
   }, [controller, issClock])
 
   const byId = useMemo(() => new Map((weather.cities ?? []).map((w) => [w.id, w])), [weather.cities])
-  const cities: GlobeCity[] = useMemo(() => CITIES.map((c): GlobeCity => {
-    const w = byId.get(c.id)
-    const t = w?.tempC
-    return { id: c.id, name: c.name, lat: c.lat, lon: c.lon, tier: c.tier, music: MUSIC_CITIES.has(c.id), sky: w?.sky ?? null, note: cityNote(w),
-      temp: t != null ? { text: tempText(t, unit), short: `${degrees(t, unit)}°`, f: cToF(t) } : null }
-  }), [byId, unit])
+  const cities: GlobeCity[] = useMemo(() => {
+    const fav = new Set(favorites)
+    return CITIES.map((c): GlobeCity => {
+      const w = byId.get(c.id)
+      const t = w?.tempC
+      return { id: c.id, name: c.name, lat: c.lat, lon: c.lon, tier: c.tier, music: MUSIC_CITIES.has(c.id), favorite: fav.has(c.id), sky: w?.sky ?? null, note: cityNote(w),
+        temp: t != null ? { text: tempText(t, unit), short: `${degrees(t, unit)}°`, f: cToF(t) } : null }
+    })
+  }, [byId, unit, favorites])
 
   const switchUnit = () => setUnit((u) => {
     const next = u === "C" ? "F" : "C"
@@ -354,7 +372,14 @@ export function App() {
         <button ref={musicChip} type="button" className={`chip chip-music${musicMode ? " on" : ""}`} aria-pressed={musicMode} onClick={() => setMusicMode((v) => !v)}
           title="Songs from around the world">♪ Music</button>
         <nav className="tools" aria-label="Globe controls">
-          <Menu label="Regions" title="Fly to a part of the world" align="start" items={REGIONS.map(([name, cam]) => ({ key: name, label: name, onSelect: () => controller.flyTo(cam) }))} />
+          <Menu label="Regions" title={favorites.length ? "Fly to a favorite city or a part of the world" : "Fly to a part of the world"} align="start" items={[
+            // the favourites first, each opening its city
+            ...favorites.flatMap((id) => {
+              const c = CITY_BY_ID.get(id)
+              return c ? [{ key: `fav-${id}`, label: <><span className="menu-star" aria-hidden="true">★</span>{c.name}</>, onSelect: () => findCity(id) }] : []
+            }),
+            ...REGIONS.map(([name, cam]) => ({ key: name, label: name, onSelect: () => controller.flyTo(cam) })),
+          ]} />
           <button type="button" className={`chip${touring ? " on" : ""}`} aria-pressed={touring} title="Turn the globe slowly"
             onClick={() => { tourAsked.current = !touring; controller.setTouring(!touring) }}>Globe</button>
           <button type="button" className={`chip${followMode ? " on" : ""}`} aria-pressed={followMode != null} title="Ride along with the International Space Station"
@@ -385,6 +410,11 @@ export function App() {
         ) : city ? (
           <aside ref={panelRef} className="panel" aria-label={`${city.name} weather`}>
             <button type="button" className="close" aria-label="Close" onClick={() => setSelected(null)}>×</button>
+            <button type="button" className={`fav${favorites.includes(city.id) ? " on" : ""}`} aria-pressed={favorites.includes(city.id)}
+              aria-label={`Favorite: ${city.name}`} disabled={!favorites.includes(city.id) && favorites.length >= MAX_FAVORITES}
+              title={favorites.includes(city.id) ? "A favorite: always shown, and in the Regions menu (click to remove)"
+                : favorites.length >= MAX_FAVORITES ? `${MAX_FAVORITES} favorites at most: remove one first` : "Add to your favorites"}
+              onClick={() => switchFavorite(city.id)}>{favorites.includes(city.id) ? "★" : "☆"}</button>
             <h2>{city.name}</h2>
             <p className="dim country">{countryName(city.country)}</p>
             <p className="big">{cw?.tempC != null ? tempText(cw.tempC, unit) : "—"}</p>

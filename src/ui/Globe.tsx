@@ -15,7 +15,7 @@ import type { Quake } from "../data/quakes"
 import type { SatField } from "../globe/satClouds"
 import { DetailLoader, type DetailStatus } from "../globe/detail"
 import type { TileFetcher } from "../data/tileFetcher"
-import { TIER_ZOOM, type CityTier } from "../data/cities"
+import { TIER_RADIUS_PX, type CityTier } from "../data/cities"
 import { PACE_START, paceFrame } from "./framePace"
 import { WindView } from "../globe/windView"
 import type { WindFrame } from "../globe/windField"
@@ -61,6 +61,8 @@ export interface GlobeCity {
   tier: CityTier
   /** a song stands on this city (music.ts) */
   music: boolean
+  /** one of the viewer's favourites (favorites.ts): always shown, with a star */
+  favorite?: boolean
 }
 
 /** the globe's radius at zoom 1, as a share of the frame's smaller side (room left for the atmosphere) */
@@ -72,8 +74,18 @@ const TOUCH_DRAG_START_PX = 10
 const MARKER_PX = 4.2
 /** markers closer than this crowd each other: the less important one is not shown */
 const MARKER_GAP_PX = 16
-/** the room a pill gives its music note */
+/** the room a pill gives its music note, and a favourite's star */
 const NOTE_PX = 14
+const STAR_PX = 13
+/** a city is behind the horizon from this close to it; from there it fades in over FADE_Z (of the globe's depth), so
+ *  cities turning over the horizon come and go softly */
+const HORIZON_Z = 0.02
+const FADE_Z = 0.14
+/** faded below this, a city is hidden outright (so nothing invisible can be clicked or tabbed to) */
+const MIN_FADE = 0.05
+/** a city shown a moment ago stays down to this share of its tier's radius, so a zoom held on a tier's edge does not
+ *  flick the whole tier in and out */
+const TIER_KEEP = 0.92
 const RING_POINTS = 24
 const RING_TRIG = Array.from({ length: RING_POINTS }, (_, k) => [Math.cos((2 * Math.PI * k) / RING_POINTS), Math.sin((2 * Math.PI * k) / RING_POINTS)])
 /** lightning flickers this often while a storm shows */
@@ -178,6 +190,8 @@ interface CityEls {
   rings: Array<[SVGPolygonElement, number]>; pill: HTMLElement | null
   /** whether the pill shows as the compact chip now; null = not yet set since the last render */
   compact: boolean | null
+  /** how far faded in it is now, near the horizon (1 = not faded); null = not yet set since the last render */
+  fade: string | null
 }
 const NO_BOXES: readonly LabelBox[] = []
 const abs = (b: LabelBox, x: number, y: number): LabelBox => [x + b[0], y + b[1], x + b[2], y + b[3]]
@@ -282,13 +296,14 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
   // never under a device pixel per CSS pixel (a zoomed-out window), at most DPR_MAX — less where the GPU cannot keep up
   const dpr = typeof window !== "undefined" ? Math.max(1, Math.min(dprCap, window.devicePixelRatio || 1)) : 1
   const noted = useCallback((c: GlobeCity) => (musicMode && c.music) || c.id === playing, [musicMode, playing])
-  const pillW = useMemo(() => new Map(cities.map((c) => [c.id, pillWidth(c.name, c.temp?.text ?? null, noted(c) ? NOTE_PX : 0)])), [cities, noted])
-  const chipW = useMemo(() => new Map(cities.flatMap((c) => (c.temp ? [[c.id, chipWidth(c.temp.short)] as const] : []))), [cities])
+  const pillW = useMemo(() => new Map(cities.map((c) => [c.id, pillWidth(c.name, c.temp?.text ?? null, (noted(c) ? NOTE_PX : 0) + (c.favorite ? STAR_PX : 0))])), [cities, noted])
+  const favorites = useMemo(() => new Set(cities.filter((c) => c.favorite).map((c) => c.id)), [cities])
+  const chipW = useMemo(() => new Map(cities.flatMap((c) => (c.temp ? [[c.id, chipWidth(c.temp.short) + (c.favorite ? STAR_PX : 0)] as const] : []))), [cities])
   const night = useMemo(() => new Set(cities.filter((c) => sunCosAt(c.lat, c.lon, sun) < NIGHT_COS).map((c) => c.id)), [cities, sun])
 
   // everything layout() needs from the latest render
-  const data = useRef({ showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, issClock, quakeSelected, gl: null as GlobeGl | null })
-  data.current = { showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, issClock, quakeSelected, gl: gl && gl !== "none" ? gl : null }
+  const data = useRef({ showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, favorites, avoid, pin, iss, issSelected, issClock, quakeSelected, gl: null as GlobeGl | null })
+  data.current = { showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, favorites, avoid, pin, iss, issSelected, issClock, quakeSelected, gl: gl && gl !== "none" ? gl : null }
   const els = useRef(new Map<string, CityEls>())
   /** where each label sat a moment ago (full pills and compact chips apart), so it holds its place as the globe moves */
   const sidesRef = useRef(new Map<string, LabelSide>())
@@ -308,7 +323,7 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     const r = FIT * Math.min(d.w, d.h) * cam.zoom, cx = d.w / 2, cy = d.h / 2
     const at = (lat: number, lon: number): [number, number] | null => {
       const [x, y, z] = toCam(unit(lat, lon), cam)
-      return z > 0.02 ? [cx + r * x, cy - r * y] : null
+      return z > HORIZON_Z ? [cx + r * x, cy - r * y] : null
     }
     const pinEl = pinRef.current
     if (pinEl) {
@@ -429,19 +444,25 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     for (const [id, c] of els.current) {
       const C = toCam(unit(c.lat, c.lon), cam)
       const x = cx + r * C[0], y = cy - r * C[1]
+      // a favourite shows at any size of the globe, and comes before every other city; but it keeps its distance from the
+      // others before it (two favourites side by side do not pile up) — only the selected city and the one playing always show
+      const favorite = d.favorites.has(id)
       const forced = id === d.selected || id === d.playing
       const featured = d.musicMode && c.music
-      if (C[2] <= 0.02 || x < -40 || x > d.w + 40 || y < -40 || y > d.h + 40 || (!forced && !featured && cam.zoom < TIER_ZOOM[c.tier])) {
+      const tierPx = TIER_RADIUS_PX[c.tier] * (shownRef.current.has(id) ? TIER_KEEP : 1)
+      if (C[2] <= HORIZON_Z + MIN_FADE * FADE_Z || x < -40 || x > d.w + 40 || y < -40 || y > d.h + 40 || (!forced && !favorite && !featured && r < tierPx)) {
         hideCity(c)
         continue
       }
-      // the selected city, the one playing, the music cities while the music is on, then by tier; within a tier the ones
-      // already shown, then the ones nearest the middle of the view
-      const rank = id === d.selected ? -2 : id === d.playing ? -1 : (featured ? 0 : 10) + c.tier * 2 + (shownRef.current.has(id) ? 0 : 1) + (1 - C[2])
+      // the selected city, the one playing, the favourites, the music cities while the music is on, then by tier; within a
+      // tier the ones already shown, then the ones nearest the middle of the view
+      const rank = id === d.selected ? -3 : id === d.playing ? -2 : favorite ? -1
+        : (featured ? 0 : 10) + c.tier * 2 + (shownRef.current.has(id) ? 0 : 1) + (1 - C[2])
       cands.push({ id, c, x, y, C, rank, forced })
     }
     cands.sort((a, b) => a.rank - b.rank)
-    const keep = spreadMarkers(cands, MARKER_GAP_PX, cands.map((k) => k.forced))
+    // (the ones shown a moment ago keep their place a little closer than new ones may come: none flickers on the edge)
+    const keep = spreadMarkers(cands, MARKER_GAP_PX, cands.map((k) => k.forced), cands.map((k) => shownRef.current.has(k.id)))
 
     // the markers that keep their place: the ring lying on the ground around each
     const items: Array<{ id: string; x: number; y: number; marker: LabelBox; w: number }> = []
@@ -455,6 +476,13 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
       if (id === d.playing) wavesAt = [x, y]
       c.g.style.display = ""
       c.g.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`)
+      // nearing the horizon, the marker and its label fade (CSS --fade, which the music's dimming multiplies)
+      const fade = Math.min(1, (C[2] - HORIZON_Z) / FADE_Z).toFixed(2)
+      if (c.fade !== fade) {
+        c.fade = fade
+        c.g.style.setProperty("--fade", fade)
+        c.pill?.style.setProperty("--fade", fade)
+      }
       // east and north along the ground, in the camera's frame: the ring is drawn in the ground's own plane
       const lat = c.lat * RAD, lon = c.lon * RAD
       const E = toCam([-Math.sin(lon), Math.cos(lon), 0], cam)
@@ -563,7 +591,7 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     const found = new Map<string, CityEls>()
     for (const g of svg.querySelectorAll<SVGGElement>("g.city")) {
       found.set(g.dataset.city ?? "", {
-        g, lat: Number(g.dataset.lat), lon: Number(g.dataset.lon), pill: null, compact: null,
+        g, lat: Number(g.dataset.lat), lon: Number(g.dataset.lon), pill: null, compact: null, fade: null,
         tier: (Number(g.dataset.tier) || 1) as CityTier, music: g.dataset.music === "1",
         rings: [...g.querySelectorAll<SVGPolygonElement>("polygon[data-px]")].map((p): [SVGPolygonElement, number] => [p, Number(p.dataset.px)]),
       })
@@ -855,8 +883,9 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
           return (
             <button key={c.id} type="button" data-city={c.id} style={{ display: "none", minWidth: pillW.get(c.id), ["--tc" as string]: c.temp ? tempColor(c.temp.f) : undefined }}
               className={`pill-city${selected === c.id ? " selected" : ""}${noted(c) ? " noted" : ""}${playing === c.id ? " playing" : ""}`}
-              onClick={() => open(c.id)} aria-label={`${c.name}${temp ? `, ${temp}` : ""}${c.music ? ", has music" : ""}${c.note ? `. ${c.note}` : ""}`}
+              onClick={() => open(c.id)} aria-label={`${c.name}${c.favorite ? ", a favorite" : ""}${temp ? `, ${temp}` : ""}${c.music ? ", has music" : ""}${c.note ? `. ${c.note}` : ""}`}
               title={`${c.name}${c.note ? `\n${c.note}` : ""}`}>
+              {c.favorite && <span className="pc-fav" aria-hidden="true">★</span>}
               {noted(c) && (playing === c.id
                 ? <span className="pc-note pc-eq" aria-hidden="true"><i /><i /><i /></span>
                 : <span className="pc-note" aria-hidden="true">♪</span>)}
