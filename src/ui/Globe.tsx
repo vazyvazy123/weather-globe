@@ -10,6 +10,8 @@ import { spreadMarkers } from "../globe/declutter"
 import { tempColor } from "../globe/tempColor"
 import { clampLat, reducedMotion, wrapLon, zoomed, type GlobeCamera, type GlobeCameraController } from "../globe/camera"
 import { pinchFactor, pinched, spread, type Point } from "../globe/gesture"
+import { QuakeView, type QuakeGeom } from "../globe/quakeView"
+import type { Quake } from "../data/quakes"
 import type { SatField } from "../globe/satClouds"
 import { DetailLoader, type DetailStatus } from "../globe/detail"
 import type { TileFetcher } from "../data/tileFetcher"
@@ -111,6 +113,12 @@ const ISS_CELLS = ISS_ARRAY_X.map((x) => `M${x + 2.8} -11v9.4M${x + 2.8} 1.6v9.4
 const DPR_MAX = 2
 /** the sun is redrawn this often (it moves a quarter of a degree a minute) */
 const SUN_EVERY_MS = 60_000
+/** quakes this recent pulse, at most MAX_PULSES of them (the strongest) */
+const PULSE_MS = 3600_000
+const MAX_PULSES = 12
+/** how far off a quake's ring a tap still finds it (CSS px): a finger is broader than a mouse */
+const QUAKE_TOUCH_SLOP_PX = 18
+const QUAKE_MOUSE_SLOP_PX = 12
 /** below this sun height (cosine of the zenith angle) a city counts as in the night */
 const NIGHT_COS = -0.05
 const RAD = Math.PI / 180
@@ -148,6 +156,11 @@ interface Props {
   onIss?: () => void
   /** the ISS's clock (ms): the real one unless a time-lapse ride runs it faster */
   issClock?: () => number
+  /** the earthquakes to ring on the ground (quakes.ts), weakest first; null = none shown */
+  quakes?: readonly Quake[] | null
+  /** the quake whose card is open: ringed in gold, and pulsing */
+  quakeSelected?: string | null
+  onQuake?: (id: string) => void
 }
 
 type Vec3 = [number, number, number]
@@ -175,7 +188,8 @@ const hideCity = (c: CityEls) => {
 }
 
 export const Globe = memo(function Globe({ cities, clouds, satellite, selected, onCity, controller, showClouds, tiles, onGpu, onDetail, reserveBottom = 0,
-  musicMode = false, playing = null, avoid = NO_BOXES, wind = null, pin = null, iss = null, issSelected = false, onIss, issClock }: Props) {
+  musicMode = false, playing = null, avoid = NO_BOXES, wind = null, pin = null, iss = null, issSelected = false, onIss, issClock,
+  quakes = null, quakeSelected = null, onQuake }: Props) {
   const stageRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -185,6 +199,9 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
   /** the wind's own canvas over the globe's, and what draws on it (made the first time there is wind) */
   const windRef = useRef<HTMLCanvasElement>(null)
   const windView = useRef<WindView | null>(null)
+  const quakeRef = useRef<HTMLCanvasElement>(null)
+  const quakeView = useRef<QuakeView | null>(null)
+  const pulsesRef = useRef<HTMLDivElement>(null)
   /** the pin on a place searched for; the ISS, its craft (turned across its path) and its path behind and ahead */
   const pinRef = useRef<SVGGElement>(null)
   const issRef = useRef<SVGGElement>(null)
@@ -270,8 +287,8 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
   const night = useMemo(() => new Set(cities.filter((c) => sunCosAt(c.lat, c.lon, sun) < NIGHT_COS).map((c) => c.id)), [cities, sun])
 
   // everything layout() needs from the latest render
-  const data = useRef({ showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, issClock, gl: null as GlobeGl | null })
-  data.current = { showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, issClock, gl: gl && gl !== "none" ? gl : null }
+  const data = useRef({ showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, issClock, quakeSelected, gl: null as GlobeGl | null })
+  data.current = { showClouds, selected, sun, pillW, chipW, w, h, dpr, reserveBottom, musicMode, playing, avoid, pin, iss, issSelected, issClock, quakeSelected, gl: gl && gl !== "none" ? gl : null }
   const els = useRef(new Map<string, CityEls>())
   /** where each label sat a moment ago (full pills and compact chips apart), so it holds its place as the globe moves */
   const sidesRef = useRef(new Map<string, LabelSide>())
@@ -364,6 +381,28 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     if (q) craft.setAttribute("transform", `rotate(${(Math.atan2(q[0] - p[0], p[1] - q[1]) / RAD).toFixed(1)})`)
   }, [controller])
 
+  /** where a still mouse rests over the globe (CSS px), for the hand over a quake's ring as the globe turns under it */
+  const mouseAt = useRef<readonly [number, number] | null>(null)
+  const markOverQuake = useCallback(() => {
+    const el = stageRef.current, m = mouseAt.current
+    if (!el) return
+    const over = m != null && quakeView.current?.hit(m[0], m[1], QUAKE_MOUSE_SLOP_PX) != null
+    if (el.classList.contains("over-quake") !== over) el.classList.toggle("over-quake", over)
+  }, [])
+
+  /** The quakes' rings for the camera now, and the pulses round the newest and the one chosen. */
+  const placeQuakes = useCallback((cam: GlobeCamera, g: QuakeGeom) => {
+    const qv = quakeView.current
+    if (!qv) return
+    qv.draw(cam, g, Date.now(), data.current.quakeSelected)
+    if (mouseAt.current) markOverQuake()
+    for (const el of pulsesRef.current?.children ?? []) {
+      const s = (el as HTMLElement).style, p = qv.at((el as HTMLElement).dataset.quake ?? "")
+      s.display = p ? "" : "none"
+      if (p) s.transform = `translate3d(${p[0].toFixed(1)}px, ${p[1].toFixed(1)}px, 0)`
+    }
+  }, [markOverQuake])
+
   /** Writes the current camera's positions into the elements, and draws the GPU layer. */
   const layout = useCallback(() => {
     const d = data.current
@@ -376,6 +415,7 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     d.gl?.draw({ width: Math.round(d.w * d.dpr), height: Math.round(d.h * d.dpr), cx: cx * d.dpr, cy: cy * d.dpr, r: r * d.dpr, view: cam, sun: d.sun, timeS: tS, clouds: d.showClouds, whole: still, lightning: cam.zoom >= LIGHTNING_ZOOM })
     detailRef.current?.view(cam, { w: d.w * d.dpr, h: d.h * d.dpr, r: r * d.dpr, cx: cx * d.dpr, cy: cy * d.dpr })
     windView.current?.view(cam, { w: d.w, h: d.h, cx, cy, r, dpr: d.dpr })
+    placeQuakes(cam, { w: d.w, h: d.h, cx, cy, r, dpr: d.dpr })
     placeOverlays()
     const fb = fallbackRefs.current
     if (fb.land) {
@@ -474,7 +514,7 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     if (((d.showClouds && d.gl?.busy) || d.gl?.fading) && frameRef.current == null) {
       frameRef.current = window.requestAnimationFrame(() => { frameRef.current = null; layoutRef.current() })
     }
-  }, [controller, placeOverlays])
+  }, [controller, placeOverlays, placeQuakes])
   const layoutRef = useRef(layout)
   layoutRef.current = layout
   useEffect(() => () => { if (frameRef.current != null) window.cancelAnimationFrame(frameRef.current) }, [])
@@ -569,6 +609,19 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     if (wind) layout()
   }, [wind, gl, layout])
   useEffect(() => () => { windView.current?.dispose(); windView.current = null }, [])
+  // the earthquakes, on their own canvas: drawn afresh as they change, as one is chosen, and as they age
+  useEffect(() => {
+    if (!quakeView.current && quakeRef.current) quakeView.current = new QuakeView(quakeRef.current)
+    quakeView.current?.setQuakes(quakes ?? [])
+    layout()
+  }, [quakes, layout])
+  useEffect(() => { layout() }, [quakeSelected, now, layout])
+  // the newest quakes pulse (the strongest of them, which come last), and the one chosen
+  const pulsing = useMemo(() => {
+    if (!quakes) return []
+    const fresh = quakes.filter((q) => now - q.timeMs < PULSE_MS).slice(-MAX_PULSES).map((q) => q.id)
+    return quakeSelected && !fresh.includes(quakeSelected) && quakes.some((q) => q.id === quakeSelected) ? [...fresh, quakeSelected] : fresh
+  }, [quakes, now, quakeSelected])
   // the 3D station, on its own canvas: made the first time the ISS is shown (the drawn one stands in without WebGL2)
   useEffect(() => {
     if (!iss || issGl.current || !issCanvasRef.current) return
@@ -657,7 +710,15 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
       return
     }
     const dr = drag.current
-    if (!dr || ev.buttons === 0) return
+    if (!dr || ev.buttons === 0) {
+      // a mouse over a quake's ring: the hand says it opens
+      if (ev.pointerType === "mouse" && onQuake) {
+        const box = ev.currentTarget.getBoundingClientRect()
+        mouseAt.current = [ev.clientX - box.left, ev.clientY - box.top]
+        markOverQuake()
+      }
+      return
+    }
     const slop = ev.pointerType === "mouse" ? DRAG_START_PX : TOUCH_DRAG_START_PX
     if (!dr.moved && Math.hypot(ev.clientX - dr.x, ev.clientY - dr.y) < slop) return
     // the pointer is captured only once a drag starts: a plain click still reaches the city under it
@@ -689,14 +750,26 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
     if (m) move({ ...cam, lon: wrapLon(cam.lon + m[0]), lat: clampLat(cam.lat + m[1]) })
   }
   const open = (id: string) => { if (!drag.current?.moved && !pinchedNow.current) onCity(id) }
+  // a tap on the globe itself (not a city, the ISS or the pin) that turned nothing: the quake under it, if any
+  const onStageClick = (ev: React.MouseEvent<HTMLDivElement>) => {
+    if (!onQuake || drag.current?.moved || pinchedNow.current) return
+    const t = ev.target as Element
+    if (t !== ev.currentTarget && t !== svgRef.current && t.tagName !== "CANVAS") return
+    const box = ev.currentTarget.getBoundingClientRect()
+    const slop = (ev.nativeEvent as PointerEvent).pointerType === "mouse" ? QUAKE_MOUSE_SLOP_PX : QUAKE_TOUCH_SLOP_PX
+    const id = quakeView.current?.hit(ev.clientX - box.left, ev.clientY - box.top, slop)
+    if (id) onQuake(id)
+  }
 
   return (
     <div ref={stageRef} className={`globe-stage${dragging ? " dragging" : ""}`} role="application" tabIndex={0}
       aria-label="Globe — drag or use the arrow keys to turn it, pinch, scroll or + / − to zoom; Tab moves between the labelled cities"
-      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onKeyDown={onKey}>
+      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onKeyDown={onKey} onClick={onStageClick}
+      onPointerLeave={() => { mouseAt.current = null; markOverQuake() }}>
       <canvas ref={canvasRef} className="globe-gl" width={Math.max(1, Math.round(w * dpr))} height={Math.max(1, Math.round(h * dpr))} style={{ width: w, height: h }} />
       <canvas ref={windRef} className="globe-wind" width={Math.max(1, Math.round(w * dpr))} height={Math.max(1, Math.round(h * dpr))}
         style={{ width: w, height: h, display: wind ? undefined : "none" }} aria-hidden="true" />
+      <canvas ref={quakeRef} className="globe-quakes" style={{ width: w, height: h, display: quakes ? undefined : "none" }} aria-hidden="true" />
       <svg ref={svgRef} className="globe-svg" width={w} height={h} viewBox={`0 0 ${w || 1} ${h || 1}`}>
         <defs>
           <radialGradient id="g-iss-halo">
@@ -770,6 +843,11 @@ export const Globe = memo(function Globe({ cities, clouds, satellite, selected, 
       </svg>
       <div ref={wavesRef} className="playing-waves" style={{ display: "none" }} aria-hidden="true"><i /><i /><i /></div>
       <div ref={issBeaconRef} className="iss-beacon" style={{ display: "none" }} aria-hidden="true"><i /><i /></div>
+      <div ref={pulsesRef} className="quake-pulses" aria-hidden="true">
+        {pulsing.map((id) => (
+          <div key={id} data-quake={id} className={`quake-pulse${id === quakeSelected ? " chosen" : ""}`} style={{ display: "none" }}><i /><i /></div>
+        ))}
+      </div>
       <canvas ref={issCanvasRef} className="iss-3d" style={{ display: "none", width: ISS_CANVAS_PX, height: ISS_CANVAS_PX }} aria-hidden="true" />
       <div ref={pillsRef} className="globe-pills">
         {cities.map((c) => {

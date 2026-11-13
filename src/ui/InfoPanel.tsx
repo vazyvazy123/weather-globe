@@ -6,7 +6,7 @@ import { useEffect, useId, useRef, useState } from "react"
 
 const link = (href: string, text: string) => <a href={href} target="_blank" rel="noopener noreferrer">{text}</a>
 
-export function InfoPanel({ status, showIss, showMusic }: { status: readonly string[]; showIss: boolean; showMusic: boolean }) {
+export function InfoPanel({ status, showIss, showMusic, showQuakes }: { status: readonly string[]; showIss: boolean; showMusic: boolean; showQuakes: boolean }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null), buttonRef = useRef<HTMLButtonElement>(null)
   const cardId = useId()
@@ -43,6 +43,7 @@ export function InfoPanel({ status, showIss, showMusic }: { status: readonly str
             <li>Weather, wind and the place search: {link("https://open-meteo.com/", "Open-Meteo.com")} ({link("https://creativecommons.org/licenses/by/4.0/", "CC BY 4.0")})</li>
             <li>Land: {link("https://www.naturalearthdata.com/", "Natural Earth")}</li>
             {showIss && <li>The ISS's orbit: {link("https://wheretheiss.at/", "wheretheiss.at")}</li>}
+            {showQuakes && <li>Earthquakes: {link("https://earthquake.usgs.gov/earthquakes/feed/", "USGS Earthquake Hazards Program")} (public domain)</li>}
             {showMusic && <li>Music previews: {link("https://www.apple.com/apple-music/", "Apple Music")}; singers' photos: Deezer</li>}
           </ul>
           <p className="info-privacy">Your browser asks these services itself, so they see its address; Open-Meteo also sees what you type in
