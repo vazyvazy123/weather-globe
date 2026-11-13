@@ -79,7 +79,8 @@ weather data directly from the providers listed below.
   song plays on a hand-drawn SVG cassette whose tape winds from reel to reel as the preview plays. Next walks the world
   west to east and the globe flies along; shuffle hops between countries. The cover, the singer's photo and the weather
   where the song is from sit beside the cassette; one volume (with mute) for every song, kept between visits; the OS
-  media keys and lock screen show the song too.
+  media keys and lock screen show the song too. ♡ beside a song (in a city's list or the player) keeps it among your
+  favourites, listed with your favourite cities under ★ Favorites, a tap away from playing again.
 
 ## Sounds of the world
 
@@ -104,7 +105,8 @@ Then open the printed local address (usually http://localhost:5173). The globe o
 prefer reduced motion); drag to turn it yourself, pinch, scroll or use the `+` / `−` at its bottom right (top right on a
 phone) to zoom, the arrow keys to move, and click a city for its details (on a phone they open as a sheet at the bottom). Press `/` (or click the box at the top left) to find a place, and click the
 ISS for where it is and the song of the day. ♪ Music, in the middle of the top bar, turns on the music. Beside it, the
-Regions menu flies to any of the seven continents (and your favourite cities); Globe starts or stops the turning; ISS rides along with the station on its
+Regions menu flies to any of the seven continents (and your favourite cities); ★ Favorites lists the cities you starred
+(☆ on a city's card) and the songs you hearted, kept in this browser alone; Globe starts or stops the turning; ISS rides along with the station on its
 time-lapse (the globe turning beneath it); the Layers menu toggles the clouds, the wind and the ISS; and °F / °C
 switches units (°F to start). The ⓘ at the bottom right says what each layer shows now and links every source.
 
@@ -171,7 +173,8 @@ src/
     throttle.ts     concurrency / per-minute limits, Cache Storage and localStorage helpers
     useWeather.ts, useSatellite.ts   React hooks that poll only while the page is visible
   ui/         React: App (toolbar, city panel, caption) and Globe (canvas + SVG markers + HTML labels);
-              MusicDock + Cassette (the player), useMusic (the <audio> element), music.css
+              MusicDock + Cassette (the player), useMusic (the <audio> element), music.css; FavoritesPanel and
+              useFavorites (the favourite cities and songs, kept in localStorage; data/favorites.ts reads them back)
 scripts/      resolve-music.mjs: the hand-picked songs → the catalog; pack-land.mjs: the fine coastline → its packed file
 test/         vitest unit tests for the pure modules
 ```

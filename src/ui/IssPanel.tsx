@@ -7,6 +7,7 @@ import { issAt, orbitMinutes, type Elements } from "../geo/orbit"
 import { subsolarPoint, sunCosAt } from "../geo/sun"
 import { WORLD_LAND } from "../geo/worldLand"
 import { SongList } from "./MusicDock"
+import type { Favorites } from "./useFavorites"
 import type { Music } from "./useMusic"
 
 // The ISS's panel: where it is now, live — what lies below it, its height and speed, day or night below; following it
@@ -36,6 +37,8 @@ interface Props {
   pick: DayPick | null
   unit: Unit
   music: Music
+  /** the viewer's favourite songs (the song of the day has its heart) */
+  favs: Favorites
   /** the follow under way, if any */
   mode: FollowMode | null
   /** the ISS's clock (the ride's, or the real one) */
@@ -47,7 +50,7 @@ interface Props {
   boxRef: (el: HTMLElement | null) => void
 }
 
-export function IssPanel({ el, pick, unit, music, mode, clock, onFollow, onFly, onClose, boxRef }: Props) {
+export function IssPanel({ el, pick, unit, music, favs, mode, clock, onFollow, onFly, onClose, boxRef }: Props) {
   const now = useNow(mode === "ride" ? 250 : 1000)
   const t = clock(), s = issAt(el, t)
   const below = whereBelow(s.lat, s.lon, CITIES, WORLD_LAND)
@@ -89,7 +92,7 @@ export function IssPanel({ el, pick, unit, music, mode, clock, onFollow, onFly, 
             <button type="button" className="link" onClick={() => onFly(pick.city.id)}>{pick.city.name}</button>, {countryName(pick.city.country)} at{" "}
             {utcTime(pick.atMs)} — the day's song comes from there.
           </p>
-          <SongList tracks={[pick.track]} music={music} country={countryName(pick.city.country)} title={null} />
+          <SongList tracks={[pick.track]} music={music} favs={favs} country={countryName(pick.city.country)} title={null} />
         </section>
       )}
     </aside>

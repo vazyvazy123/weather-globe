@@ -63,6 +63,18 @@ describe("on a phone", () => {
   })
 })
 
+describe("on a touch screen", () => {
+  const coarse = media(styles, "(pointer: coarse)")
+  const px = (decls: string, prop: string): number => parseFloat(value(decls, prop) ?? "0")
+
+  test("a song's heart is as big to tap as a city's star", () => {
+    const heart = rule(coarse, ".heart"), star = rule(coarse, ".panel .fav")
+    expect(star).not.toBe("")
+    expect(px(heart, "width")).toBeGreaterThanOrEqual(px(star, "width"))
+    expect(px(heart, "height")).toBeGreaterThanOrEqual(px(star, "height"))
+  })
+})
+
 describe("on a short screen", () => {
   test("a panel scrolls within the stage, never past its bottom", () => {
     const panel = rule(styles, ".panel")
